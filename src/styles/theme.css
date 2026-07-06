@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #050505;
+  --color-surface: #0d0d0d;
+  --color-surface-elevated: #161616;
+  --color-line: #1f1f1f;
+  --color-accent: #ededed;
+  --color-accent-muted: #6b7280;
+  --color-text: #ededed;
+  --color-text-muted: #9ca3af;
+  --color-success: #86c47e;
+  --color-danger: #f87171;
+
+  --color-gold: #d4af37;
+  --color-gold-muted: #c89a2a;
+  --color-char-ally: #7dd3fc;
+  --color-char-foe: #fb7185;
+  --color-char-neutral: #94a3b8;
+  --color-place: #fbbf24;
+  --color-event: #c4b5fd;
+
+  --font-display: "Cinzel", "Iowan Old Style", serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+    color: var(--color-text);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+  }
+
+  /* Subtle scrollbars in the fantasy palette */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+}
+
+@utility ring-accent {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 60%, transparent);
+}
