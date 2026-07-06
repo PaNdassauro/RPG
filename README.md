@@ -30,6 +30,10 @@ npm run preview  # preview the production build
 npm run lint     # type-check only
 ```
 
+## Contributing
+
+Contributions are welcome — bug reports, feature ideas, code, translations, and playtesting feedback. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started. Pull requests should target the `dev` branch.
+
 ## License
 
 Code is licensed under the [MIT License](LICENSE).
