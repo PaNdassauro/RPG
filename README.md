@@ -4,7 +4,7 @@ A browser-based tabletop RPG app with an AI Dungeon Master, built on the D&D 5e 
 
 ## Features
 
-- AI Dungeon Master powered by your own LLM provider: Anthropic, OpenAI, or local Ollama
+- AI Dungeon Master for the Forgotten Realms (1492 DR, Sword Coast), powered by your own LLM provider: Anthropic Claude, OpenAI, or a local model through Ollama (OpenAI-compatible API)
 - D&D 5e SRD content bundled (races, classes, spells, monsters, equipment)
 - Character creation and campaign management, persisted locally
 - Bring your own API key — configured at runtime in Settings, never leaves your browser except to call your chosen provider
@@ -20,7 +20,11 @@ npm install
 npm run dev
 ```
 
-Open the app, go to **Settings**, and add an API key for Anthropic or OpenAI — or point it at a local [Ollama](https://ollama.com) instance (default `http://localhost:11434`).
+Open the app, go to **Settings**, and add an API key for Anthropic or OpenAI. Anthropic defaults to Claude Sonnet 5.5 (Opus 5.5 and Haiku 5.5 are also offered); for OpenAI you can pick a preset or type any chat model id.
+
+To play against a local model, install [Ollama](https://ollama.com), pull a model (for example `ollama pull llama3.1`), and choose **Local · Ollama** in Settings. The default endpoint is `http://localhost:11434/v1` and no key is needed. Because the app calls the model straight from your browser, start Ollama with `OLLAMA_ORIGINS` set to the app's origin, for example `OLLAMA_ORIGINS=http://localhost:5173 ollama serve`, or the browser will block the requests.
+
+Without any provider configured, the DM falls back to a small templated narrator (enough to try the interface). Google Gemini is not wired yet.
 
 Other scripts:
 

@@ -7,6 +7,14 @@ export interface NormalizedMessage {
   content: string;
   /** Tool call results sent back to the model. */
   toolCallId?: string;
+  /** Cache breakpoint: the provider may cache the prefix ending at this message. */
+  cache?: boolean;
+}
+
+/** One block of the system prompt. `cache` marks the end of a cacheable prefix. */
+export interface SystemPart {
+  text: string;
+  cache?: boolean;
 }
 
 export interface ToolSpec {
@@ -20,10 +28,11 @@ export type StreamEvent =
   | { kind: "text"; delta: string }
   | { kind: "tool_call"; id: string; name: string; argsJSON: string }
   | { kind: "error"; message: string }
-  | { kind: "done"; reason: "stop" | "tool_calls" | "length" | "error" };
+  | { kind: "done"; reason: "stop" | "tool_calls" | "length" | "error" | "refusal" | "aborted" };
 
 export interface CompletionArgs {
-  system: string;
+  /** A plain string, or ordered parts (stable first, volatile last) for prompt caching. */
+  system: string | SystemPart[];
   messages: NormalizedMessage[];
   tools: ToolSpec[];
   /** Some providers require an explicit model id; adapters resolve a default if absent. */
@@ -52,3 +61,10 @@ export interface ToolCallResult {
  * Returns null if validation fails — caller decides whether to retry / warn.
  */
 export type ToolCallParser = (raw: { id: string; name: string; argsJSON: string }) => ToolCallResult | null;
+
+/** Flatten a system prompt to plain text (providers without prompt caching). */
+export function systemToText(system: string | SystemPart[]): string {
+  return typeof system === "string"
+    ? system
+    : system.map((p) => p.text).join("\n\n");
+}

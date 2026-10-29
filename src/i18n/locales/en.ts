@@ -77,6 +77,20 @@ const en = {
     notWired: "This provider isn't wired yet. Once the adapter lands you'll be able to enter a key here.",
     endpointHelp:
       "This key will be used to call {endpoint} directly from your browser. The provider's CORS policy applies. If your provider blocks browser-direct calls, the request will fail and the dungeon master will fall back to the stub.",
+    baseUrlLabel: "Endpoint",
+    endpointOnFile: "Endpoint ·",
+    customModelOption: "Custom model id…",
+    customModelPlaceholder: "Model id, e.g. gpt-4.1",
+    noKeyNeeded: "No key needed for a local server.",
+    errors: {
+      auth: "{provider} rejected the API key. Check it in Settings.",
+      rateLimit: "{provider} is rate-limiting requests. Wait a moment and try again.",
+      overloaded: "{provider} is overloaded right now. Try again in a moment.",
+      network: "Couldn't reach {provider}: {message}",
+      http: "{provider} error {status}: {message}",
+      streamEnded: "The connection to {provider} closed before the reply finished.",
+      streamFailed: "The reply from {provider} failed mid-stream.",
+    },
     withoutKey: {
       title: "Without a key",
       body: "The dungeon master falls back to a small templated narrator that opens the scene and reflects what you do. It's enough to test the interface — but the world doesn't yet truly listen. Configure a provider above to wake it up.",
@@ -106,12 +120,12 @@ const en = {
     claude: {
       name: "Anthropic Claude",
       blurb:
-        "Best at long-form narrative and roleplay. Sonnet 4.6 is a strong default; Opus 4.7 for richer prose at higher cost.",
+        "Best at long-form narrative and roleplay. Sonnet 5.5 is the recommended default; Opus 5.5 for richer prose at higher cost; Haiku 5.5 is the fastest and cheapest.",
     },
     openai: {
       name: "OpenAI GPT",
       blurb:
-        "Strong narrative and dialogue. GPT-4o is the workhorse choice; GPT-4o mini is the cheapest path that still feels alive.",
+        "Strong narrative and dialogue. GPT-4o is the workhorse choice; GPT-4o mini is the cheapest path that still feels alive. Any other chat model can be typed in as a custom model id.",
     },
     gemini: {
       name: "Google Gemini",
@@ -120,7 +134,7 @@ const en = {
     ollama: {
       name: "Local · Ollama",
       blurb:
-        "Coming next. Will support local models via Ollama's HTTP API.",
+        "Run a local model through Ollama's OpenAI-compatible API (default http://localhost:11434/v1). No key needed; type the model you pulled, e.g. llama3.1. Because this app runs in your browser, start Ollama with OLLAMA_ORIGINS set to this site's origin (for example OLLAMA_ORIGINS=http://localhost:5173), or the browser will block the requests.",
     },
   },
 
@@ -648,12 +662,9 @@ const en = {
   settingsContent: {
     forgottenRealms: {
       name: "Forgotten Realms",
-      tagline: "The classic Dungeons & Dragons setting.",
-      blurb:
-        "Faerûn — Waterdeep on the Sword Coast, the rolling fields of Cormyr, the High Forest, the Underdark beneath. A bright, high-magic world where dragons still claim mountains, gods walk in disguise, and adventurers rise from tavern brawls to topple kingdoms. Lean into the canon — Mystra's weave, Selûne's moon, Bahamut's gold — or carve your own corner of it.",
       themes: ["High fantasy", "High magic", "Heroic", "Canon-rich"],
       dmSeed:
-        "The campaign is set in the **Forgotten Realms** — Faerûn — the canonical Dungeons & Dragons setting. The world is high fantasy and high magic: gods are real and active, dragons are real, the Underdark is a literal place beneath the surface, and adventurers are an established profession. Common starting points include the Sword Coast (Waterdeep, Baldur's Gate, Neverwinter), the Dalelands, and the Moonsea. Tone is heroic — characters are expected to rise. Use canonical Faerûnian flavor: Mystra and the Weave, Selûne and Shar, the Harpers, the Zhentarim. Avoid copying any specific published adventure verbatim — improvise within the setting's idiom.",
+        "The campaign is set in the **Forgotten Realms** (Faerûn), centered on the Sword Coast. High fantasy and high magic, yet lived-in: gods are real, dragons are real, the Underdark is a literal place below the surface, and adventuring is an established trade. The tone is heroic: characters are expected to rise, but the world does not bend to them. Improvise within the setting's idiom and never reproduce a published adventure.",
     },
   },
 

@@ -78,6 +78,20 @@ const ptBR = {
       "Este provedor ainda não foi conectado. Quando o adaptador chegar, você poderá inserir uma chave aqui.",
     endpointHelp:
       "Esta chave será usada para chamar {endpoint} diretamente do seu navegador. As políticas de CORS do provedor se aplicam. Se o provedor bloquear chamadas diretas do navegador, a requisição falhará e o mestre voltará ao modo simulado.",
+    baseUrlLabel: "Endereço (endpoint)",
+    endpointOnFile: "Endpoint ·",
+    customModelOption: "ID de modelo personalizado…",
+    customModelPlaceholder: "ID do modelo, ex.: gpt-4.1",
+    noKeyNeeded: "Nenhuma chave necessária para um servidor local.",
+    errors: {
+      auth: "{provider} rejeitou a chave de API. Confira em Configurações.",
+      rateLimit: "{provider} está limitando as requisições. Espere um instante e tente de novo.",
+      overloaded: "{provider} está sobrecarregado agora. Tente de novo em instantes.",
+      network: "Não foi possível falar com {provider}: {message}",
+      http: "Erro {status} de {provider}: {message}",
+      streamEnded: "A conexão com {provider} caiu antes de a resposta terminar.",
+      streamFailed: "A resposta de {provider} falhou no meio do caminho.",
+    },
     withoutKey: {
       title: "Sem chave",
       body: "O mestre cai em um narrador simulado pequeno que abre a cena e reflete o que você faz. É o suficiente para testar a interface — mas o mundo ainda não escuta de verdade. Configure um provedor acima para acordá-lo.",
@@ -107,12 +121,12 @@ const ptBR = {
     claude: {
       name: "Anthropic Claude",
       blurb:
-        "Excelente em narrativa longa e roleplay. Sonnet 4.6 é um padrão sólido; Opus 4.7 entrega prosa mais rica a um custo maior.",
+        "Excelente em narrativa longa e roleplay. Sonnet 5.5 é o padrão recomendado; Opus 5.5 entrega prosa mais rica a um custo maior; Haiku 5.5 é o mais rápido e barato.",
     },
     openai: {
       name: "OpenAI GPT",
       blurb:
-        "Forte em narrativa e diálogo. GPT-4o é a escolha de cavalo de batalha; GPT-4o mini é o caminho mais barato que ainda parece vivo.",
+        "Forte em narrativa e diálogo. GPT-4o é a escolha de cavalo de batalha; GPT-4o mini é o caminho mais barato que ainda parece vivo. Qualquer outro modelo de chat pode ser digitado como ID personalizado.",
     },
     gemini: {
       name: "Google Gemini",
@@ -121,7 +135,7 @@ const ptBR = {
     ollama: {
       name: "Local · Ollama",
       blurb:
-        "Em breve. Suportará modelos locais via API HTTP do Ollama.",
+        "Rode um modelo local pela API compatível com OpenAI do Ollama (padrão http://localhost:11434/v1). Não precisa de chave; digite o modelo que você baixou, ex.: llama3.1. Como este app roda no navegador, inicie o Ollama com OLLAMA_ORIGINS apontando para a origem deste site (por exemplo OLLAMA_ORIGINS=http://localhost:5173), senão o navegador bloqueia as requisições.",
     },
   },
 
@@ -654,18 +668,15 @@ const ptBR = {
   settingsContent: {
     forgottenRealms: {
       name: "Reinos Esquecidos",
-      tagline: "O cenário clássico de Dungeons & Dragons.",
-      blurb:
-        "Faerûn — Águasfundas na Costa da Espada, os campos ondulados de Cormyr, a Floresta Alta, a Subterrâneo abaixo. Um mundo brilhante, de magia alta, onde dragões ainda reivindicam montanhas, deuses caminham disfarçados, e aventureiros se erguem de brigas de taverna para derrubar reinos. Aproveite o cânone — a Trama de Mystra, a lua de Selûne, o ouro de Bahamut — ou esculpa seu próprio canto dele.",
       themes: ["Alta fantasia", "Alta magia", "Heroico", "Cânone rico"],
       dmSeed:
-        "A campanha se passa nos **Reinos Esquecidos** — Faerûn — o cenário canônico de Dungeons & Dragons. O mundo é de alta fantasia e alta magia: deuses são reais e ativos, dragões são reais, o Subterrâneo é um lugar literal abaixo da superfície, e aventureiro é uma profissão estabelecida. Pontos de partida comuns incluem a Costa da Espada (Águasfundas, Portão de Baldur, Neverwinter), as Terras dos Vales e o Mar da Lua. O tom é heroico — espera-se que os personagens se elevem. Use o sabor canônico de Faerûn: Mystra e a Trama, Selûne e Shar, os Harpistas, os Zhentarim. Evite copiar verbatim qualquer aventura publicada — improvise dentro do idioma do cenário.",
+        "A campanha se passa nos **Reinos Esquecidos** (Faerûn), com centro na Costa da Espada. Alta fantasia e alta magia, mas com vida de verdade: deuses são reais, dragões são reais, o Subterrâneo é um lugar literal abaixo da superfície, e aventurar-se é um ofício estabelecido. O tom é heroico: espera-se que os personagens cresçam, mas o mundo não se curva a eles. Improvise dentro do idioma do cenário e nunca reproduza uma aventura publicada. Na narração use os nomes oficiais em português do Brasil: Águas Profundas (Waterdeep), Portão de Baldur, Neverwinter, Costa da Espada, Vale do Vento Gélido, Subterrâneo, Harpistas. Nas marcações [FACTION] e [REP], porém, use sempre o nome em inglês do resumo (Harpers, Zhentarim...).",
     },
   },
 
   stubDm: {
     openings: [
-      "Costa da Espada no fim do outono — a estrada de Daggerford até Águasfundas está cheia de carroças de mercadores e peregrinos cansados, e o vento do mar carrega o cheiro de sal e piche do porto à frente. {name} contorna um morro e vê a grande cidade pela primeira vez hoje: muralhas brancas captando a última luz, dez mil chaminés exalando fumaça fina contra o céu violeta.\n\nUm chefe de caravana grita com alguém no portão. Uma criança passa correndo com um pastel quente. A carruagem de um nobre passa atroando, atrasada para algum lugar.\n\nO que você faz?",
+      "Costa da Espada no fim do outono — a estrada de Daggerford até Águas Profundas está cheia de carroças de mercadores e peregrinos cansados, e o vento do mar carrega o cheiro de sal e piche do porto à frente. {name} contorna um morro e vê a grande cidade pela primeira vez hoje: muralhas brancas captando a última luz, dez mil chaminés exalando fumaça fina contra o céu violeta.\n\nUm chefe de caravana grita com alguém no portão. Uma criança passa correndo com um pastel quente. A carruagem de um nobre passa atroando, atrasada para algum lugar.\n\nO que você faz?",
       "O Portal Boquiaberto cheira a fumaça de lareira, cerveja velha e pedra úmida onde o grande poço desce até a masmorra abaixo. {name} empurra a porta e a sala se vira — só por um instante, só do jeito que tavernas se viram para recém-chegados — e depois volta a beber. Um halfling no balcão ergue uma caneca. O leão-de-chácara, um meio-orc de rosto bondoso, acena uma vez com a cabeça.\n\nO que você faz?",
       "Amanhecer sobre a Estrada do Comércio. {name} caminha à frente de uma pequena caravana que pagou por proteção: três carroças, dois guardas, um mercador nervoso. Os campos de Amn ainda dormem seu último sono, o orvalho prateado em cada folha. O grito de um falcão, lá no alto. E então — distante, quase imaginado — uma trompa respondendo. Ou uma trompa chamando.\n\nO que você faz?",
     ],

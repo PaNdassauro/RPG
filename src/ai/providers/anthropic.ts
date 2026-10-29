@@ -6,18 +6,38 @@
  * calling the API from the browser. The user is warned about this in the
  * Settings UI.
  */
+import { z } from "zod";
+import { t } from "@/i18n";
 import type {
   CompletionArgs,
   LLMProvider,
+  NormalizedMessage,
   StreamEvent,
+  SystemPart,
 } from "../provider";
+import { readSseEvents } from "../sse";
+import {
+  describeHttpError,
+  describeNetworkError,
+  fetchWithRetry,
+  isAbortError,
+} from "./http";
 
-export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5";
+/** Cheap, fast model used for background work such as rolling summaries. */
+export const CHEAP_CLAUDE_MODEL = "claude-haiku-5-5";
 export const CLAUDE_MODEL_OPTIONS = [
-  { id: "claude-opus-4-7", label: "Opus 4.7 (richest prose, slowest)" },
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6 (recommended)" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5 (fastest, lightest)" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5 (recommended)" },
+  { id: "claude-opus-5-5", label: "Opus 5.5 (richest prose, slowest)" },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5 (fastest, lightest)" },
 ] as const;
+
+export function isKnownClaudeModel(id: string): boolean {
+  return CLAUDE_MODEL_OPTIONS.some((m) => m.id === id);
+}
+
+/** Default output cap. Thinking tokens on the 5.5 models count toward it. */
+const DEFAULT_MAX_TOKENS = 4096;
 
 interface AnthropicConfig {
   apiKey: string;
@@ -25,9 +45,104 @@ interface AnthropicConfig {
   maxTokens?: number;
 }
 
+type StopReasonOut = "stop" | "tool_calls" | "length" | "refusal";
+
+export function mapAnthropicStopReason(reason: string | null | undefined): StopReasonOut {
+  switch (reason) {
+    case "max_tokens":
+      return "length";
+    case "refusal":
+      return "refusal";
+    case "tool_use":
+      return "tool_calls";
+    default:
+      // end_turn, stop_sequence, pause_turn, or absent.
+      return "stop";
+  }
+}
+
+/**
+ * Request fields that keep latency low on the 5.5 models. Both are documented
+ * request shapes: `output_config.effort` (GA) and `thinking: between_tools`
+ * (Sonnet 5.5 only; it takes no other field and requires effort <= high, which
+ * is its default). Other models get nothing extra — unknown fields are a 400.
+ */
+export function modelRequestExtras(model: string): Record<string, unknown> {
+  if (model.startsWith("claude-opus-5-5")) return { output_config: { effort: "low" } };
+  if (model.startsWith("claude-sonnet-5-5")) return { thinking: { type: "between_tools" } };
+  return {};
+}
+
+interface TextBlockParam {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+}
+
+const EPHEMERAL = { type: "ephemeral" } as const;
+
+function systemBlocks(system: string | SystemPart[]): TextBlockParam[] {
+  const parts: SystemPart[] = typeof system === "string" ? [{ text: system, cache: true }] : system;
+  return parts
+    .filter((p) => p.text.length > 0)
+    .map((p) => ({
+      type: "text" as const,
+      text: p.text,
+      ...(p.cache ? { cache_control: EPHEMERAL } : {}),
+    }));
+}
+
+function messageParam(m: NormalizedMessage): {
+  role: "user" | "assistant";
+  content: string | TextBlockParam[];
+} {
+  const role = m.role === "assistant" ? "assistant" : "user";
+  if (!m.cache) return { role, content: m.content };
+  return {
+    role,
+    content: [{ type: "text", text: m.content, cache_control: EPHEMERAL }],
+  };
+}
+
+/** Pure request-body builder (exported for tests). */
+export function buildAnthropicBody(
+  args: CompletionArgs,
+  model: string,
+  maxTokens: number,
+): Record<string, unknown> {
+  return {
+    model,
+    system: systemBlocks(args.system),
+    messages: args.messages.map(messageParam),
+    max_tokens: maxTokens,
+    stream: true,
+    ...modelRequestExtras(model),
+  };
+}
+
+const StreamEventSchema = z
+  .object({
+    type: z.string(),
+    delta: z
+      .object({
+        type: z.string().optional(),
+        text: z.string().optional(),
+        stop_reason: z.string().nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
+    error: z
+      .object({ type: z.string().optional(), message: z.string().optional() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const PROVIDER_NAME = "Anthropic";
+
 export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
   const model = config.model ?? DEFAULT_CLAUDE_MODEL;
-  const maxTokens = config.maxTokens ?? 1024;
+  const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
 
   return {
     id: "claude",
@@ -37,145 +152,110 @@ export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
     streamCompletion: async function* (
       args: CompletionArgs,
     ): AsyncIterable<StreamEvent> {
+      if (args.signal?.aborted) {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+
       let response: Response;
-      // Retry once on 429/503 with exponential backoff. Anthropic ratelimits
-      // sometimes flake on the streaming endpoint and a quick retry restores
-      // the request without surfacing an error to the player.
-      const attempt = async () => {
-        return await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": config.apiKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          signal: args.signal,
-          body: JSON.stringify({
-            model: args.model ?? model,
-            // System as a single ephemeral cache block. The system prompt is
-            // large and mostly stable across turns (only the encounter snapshot
-            // varies on combat rounds). Anthropic caches the prefix for ~5 min,
-            // so a campaign of 5+ turns within a session pays the system tokens
-            // once at full price and ~10% on every following turn.
-            system: [
-              {
-                type: "text",
-                text: args.system,
-                cache_control: { type: "ephemeral" },
-              },
-            ],
-            messages: args.messages.map((m) => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.content,
-            })),
-            max_tokens: maxTokens,
-            stream: true,
-          }),
-        });
-      };
       try {
-        response = await attempt();
-        if ((response.status === 429 || response.status === 503) && !args.signal?.aborted) {
-          await new Promise((r) => setTimeout(r, 800));
-          response = await attempt();
-        }
+        response = await fetchWithRetry(
+          "https://api.anthropic.com/v1/messages",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": config.apiKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true",
+            },
+            body: JSON.stringify(buildAnthropicBody(args, args.model ?? model, maxTokens)),
+          },
+          args.signal,
+        );
       } catch (err) {
-        yield {
-          kind: "error",
-          message:
-            err instanceof Error
-              ? `Network error: ${err.message}`
-              : "Network error",
-        };
+        if (args.signal?.aborted || isAbortError(err)) {
+          yield { kind: "done", reason: "aborted" };
+          return;
+        }
+        console.error("[ai/anthropic] network error", err);
+        yield { kind: "error", message: describeNetworkError(err, PROVIDER_NAME) };
         yield { kind: "done", reason: "error" };
         return;
       }
 
       if (!response.ok || !response.body) {
         const text = await response.text().catch(() => "");
+        console.error(`[ai/anthropic] HTTP ${response.status}`, text);
         yield {
           kind: "error",
-          message: `Anthropic API ${response.status}: ${text || response.statusText}`,
+          message: describeHttpError(response.status, text, PROVIDER_NAME),
         };
         yield { kind: "done", reason: "error" };
         return;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
+      let stopReason: string | null = null;
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+        for await (const sse of readSseEvents(response.body)) {
+          if (sse.data === "[DONE]") continue;
+          let json: unknown;
+          try {
+            json = JSON.parse(sse.data);
+          } catch {
+            continue;
+          }
+          const parsed = StreamEventSchema.safeParse(json);
+          if (!parsed.success) continue;
+          const event = parsed.data;
 
-          // SSE events are separated by blank lines.
-          let nlIdx: number;
-          while ((nlIdx = buffer.indexOf("\n\n")) !== -1) {
-            const block = buffer.slice(0, nlIdx);
-            buffer = buffer.slice(nlIdx + 2);
-            const event = parseSseBlock(block);
-            if (!event) continue;
-
-            if (event.type === "content_block_delta") {
-              const delta = event.delta;
-              if (delta?.type === "text_delta" && typeof delta.text === "string") {
-                yield { kind: "text", delta: delta.text };
-              }
-            } else if (event.type === "message_stop") {
-              yield { kind: "done", reason: "stop" };
-              return;
-            } else if (event.type === "error") {
-              yield {
-                kind: "error",
-                message: event.error?.message ?? "Unknown stream error",
-              };
-              yield { kind: "done", reason: "error" };
-              return;
+          if (event.type === "content_block_delta") {
+            if (event.delta?.type === "text_delta" && typeof event.delta.text === "string") {
+              yield { kind: "text", delta: event.delta.text };
             }
+          } else if (event.type === "message_delta") {
+            if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
+          } else if (event.type === "message_stop") {
+            yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
+            return;
+          } else if (event.type === "error") {
+            const overloaded = event.error?.type === "overloaded_error";
+            console.error("[ai/anthropic] stream error", event.error);
+            yield {
+              kind: "error",
+              message: overloaded
+                ? t("settings.errors.overloaded", { provider: PROVIDER_NAME })
+                : (event.error?.message ?? t("settings.errors.streamFailed", { provider: PROVIDER_NAME })),
+            };
+            yield { kind: "done", reason: "error" };
+            return;
           }
         }
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          yield { kind: "done", reason: "stop" };
+        if (args.signal?.aborted || isAbortError(err)) {
+          yield { kind: "done", reason: "aborted" };
           return;
         }
-        yield {
-          kind: "error",
-          message: err instanceof Error ? err.message : "Stream read failed",
-        };
+        console.error("[ai/anthropic] stream read failed", err);
+        yield { kind: "error", message: describeNetworkError(err, PROVIDER_NAME) };
         yield { kind: "done", reason: "error" };
         return;
       }
 
-      yield { kind: "done", reason: "stop" };
+      if (args.signal?.aborted) {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+      // The stream closed without message_stop: the reply may be cut short.
+      if (stopReason !== null) {
+        yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
+        return;
+      }
+      yield {
+        kind: "error",
+        message: t("settings.errors.streamEnded", { provider: PROVIDER_NAME }),
+      };
+      yield { kind: "done", reason: "error" };
     },
   };
-}
-
-interface AnthropicSseEvent {
-  type: string;
-  delta?: { type?: string; text?: string };
-  error?: { message?: string };
-}
-
-function parseSseBlock(block: string): AnthropicSseEvent | null {
-  // Each block is one or more "key: value" lines. We only need `data:`.
-  const lines = block.split("\n");
-  let dataLine: string | null = null;
-  for (const line of lines) {
-    if (line.startsWith("data:")) {
-      dataLine = line.slice(5).trimStart();
-      break;
-    }
-  }
-  if (!dataLine || dataLine === "[DONE]") return null;
-  try {
-    return JSON.parse(dataLine) as AnthropicSseEvent;
-  } catch {
-    return null;
-  }
 }
