@@ -43,6 +43,11 @@ const ABILITY_LABEL: Record<string, string> = {
   cha: "CHA",
 };
 
+interface RollingState {
+  result: DiceRollResult;
+  success: boolean;
+}
+
 export function PendingCheckCard() {
   const t = useT();
   const pending = useSessionStore((s) => s.pendingCheck);
@@ -51,7 +56,7 @@ export function PendingCheckCard() {
   const appendDiceRoll = useSessionStore((s) => s.appendDiceRoll);
   const setPendingCheck = useSessionStore((s) => s.setPendingCheck);
 
-  const [rolling, setRolling] = useState<DiceRollResult | null>(null);
+  const [rolling, setRolling] = useState<RollingState | null>(null);
 
   const onRoll = useCallback(async () => {
     if (!pending || !character || !campaignId || rolling) return;
@@ -66,7 +71,7 @@ export function PendingCheckCard() {
       pending.dc,
       condMode.mode,
     );
-    setRolling(resolution.result);
+    setRolling({ result: resolution.result, success: resolution.success });
 
     const ts = Date.now();
     const rollRecord: DiceRollRecord = {
@@ -84,13 +89,15 @@ export function PendingCheckCard() {
       ts,
     };
 
-    const outcome = resolution.isCritical
-      ? t("play.check.crit")
+    // The outcome is decided by the DC alone (a natural 20/1 never flips an
+    // ability check); the natural roll is only mentioned as flavor.
+    const outcome = resolution.success
+      ? resolution.isCritical
+        ? t("play.check.successNat20")
+        : t("play.check.success")
       : resolution.isFumble
-        ? t("play.check.fumble")
-        : resolution.success
-          ? t("play.check.success")
-          : t("play.check.failure");
+        ? t("play.check.failureNat1")
+        : t("play.check.failure");
 
     const sysContent = t("play.check.systemMessage", {
       skill: SKILL_LABEL[pending.skill] ?? pending.skill,
@@ -141,7 +148,7 @@ export function PendingCheckCard() {
 
 interface CardBodyProps {
   pending: PendingCheck;
-  rolling: DiceRollResult | null;
+  rolling: RollingState | null;
   onRoll: () => void;
   t: ReturnType<typeof useT>;
   character: ReturnType<typeof useSessionStore.getState>["character"];
@@ -195,7 +202,7 @@ function CardBody({ pending, rolling, onRoll, t, character }: CardBodyProps) {
               {pending.reason}
             </p>
           )}
-          <p className="mt-2 font-mono text-[11px] text-text-muted/80">
+          <p className="mt-2 font-mono text-xs text-text-muted/80">
             {ABILITY_LABEL[ability]} {signed(abilityMod)}
             {expertise
               ? t("play.check.expertise", { bonus: profBonus * 2 })
@@ -219,7 +226,7 @@ function CardBody({ pending, rolling, onRoll, t, character }: CardBodyProps) {
 
       {rolling && (
         <div className="mt-4 flex justify-center border-t border-line/40 pt-4">
-          <DiceRoll result={rolling} dc={pending.dc} autoPlay />
+          <DiceRoll result={rolling.result} dc={pending.dc} success={rolling.success} autoPlay />
         </div>
       )}
     </motion.div>

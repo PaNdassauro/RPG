@@ -64,7 +64,7 @@ export function DiceDemo() {
 
       <div className="mt-10 space-y-4">
         {rolls.length === 0 ? (
-          <p className="text-center text-sm text-text-muted/70">No rolls yet.</p>
+          <p className="text-center text-sm text-text-muted/80">No rolls yet.</p>
         ) : (
           rolls
             .slice()

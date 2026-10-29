@@ -8,6 +8,19 @@ const ptBR = {
     update: "Atualizar",
     delete: "Excluir",
     loading: "Carregando…",
+    close: "Fechar",
+  },
+
+  dice: {
+    verdict: {
+      critical: "Crítico",
+      success: "Sucesso",
+      fumble: "Falha crítica",
+      failure: "Falha",
+    },
+    dc: "CD {n}",
+    announce: "Rolagem {expression}: {total}.",
+    announceDc: "Rolagem {expression}: {total} contra CD {dc}. {verdict}.",
   },
 
   title: {
@@ -83,6 +96,8 @@ const ptBR = {
     customModelOption: "ID de modelo personalizado…",
     customModelPlaceholder: "ID do modelo, ex.: gpt-4.1",
     noKeyNeeded: "Nenhuma chave necessária para um servidor local.",
+    showKey: "Mostrar chave",
+    hideKey: "Ocultar chave",
     errors: {
       auth: "{provider} rejeitou a chave de API. Confira em Configurações.",
       rateLimit: "{provider} está limitando as requisições. Espere um instante e tente de novo.",
@@ -112,6 +127,8 @@ const ptBR = {
       importButton: "Importar JSON",
       exported: "Exportado: {campaigns} campanha(s), {messages} mensagens.",
       imported: "Importado: {campaigns} campanha(s), {characters} personagem(s), {messages} mensagens.",
+      importedSkipped:
+        "Importado: {campaigns} campanha(s), {characters} personagem(s), {messages} mensagens. {skipped} registro(s) inválido(s) ignorado(s).",
       exportFailed: "Falha ao exportar.",
       importFailed: "Falha ao importar — o arquivo pode estar corrompido.",
     },
@@ -143,6 +160,7 @@ const ptBR = {
     backTitle: "← Início",
     eyebrow: "Novo Personagem",
     flavor: "Tradição 5e",
+    progress: "Passo {n} / {total} · {name}",
     forge: "Forja",
     stepNav: {
       identity: "Identidade",
@@ -301,12 +319,29 @@ const ptBR = {
       searchFill: "Procuro na área qualquer coisa de interesse.",
     },
     diceButton: "Dados",
+    actionLabel: "Sua ação",
+    heroTitle: "Herói",
+    worldTitle: "Mundo",
+    moreMenu: "Mais",
+    sheet: {
+      eyebrow: "Ficha",
+      level: "Nível {n}",
+      tabs: {
+        summary: "Resumo",
+        skills: "Habilidades",
+        attacks: "Ataques",
+        spells: "Magias",
+        gear: "Equipamento",
+        story: "História",
+      },
+    },
     actionPlaceholder:
       'O que você faz? Texto comum é ação; "texto entre aspas" é fala.  (Cmd/Ctrl+Enter)',
     actionPlaceholderBusy: "O mestre está respondendo…",
     actionPlaceholderCombat: "Seu turno — descreva o que faz. Toque em Ação ou Bônus para gastá-las, depois Encerrar turno quando terminar.",
     sendTitle: "Enviar (Cmd/Ctrl+Enter)",
     diceTray: {
+      expressionLabel: "Expressão de dados",
       title: "Bandeja de dados",
       hint: "Os resultados aparecem no log de narração.",
       rollButton: "Rolar",
@@ -324,6 +359,7 @@ const ptBR = {
       noQuests: "A primeira tarefa ainda não te encontrou.",
     },
     narrationLog: {
+      logLabel: "Narração",
       worldQuiet: "O mundo está em silêncio…",
       dmThinking: "O mestre considera…",
       jumpButton: "Novas",
@@ -461,8 +497,8 @@ const ptBR = {
       expertise: " · expertise (+{bonus})",
       success: "Sucesso",
       failure: "Fracasso",
-      crit: "Crítico",
-      fumble: "Falha crítica",
+      successNat20: "Sucesso (20 natural)",
+      failureNat1: "Falha (1 natural)",
       systemMessage: "Teste de {skill}: {total} vs CD {dc} — {outcome}",
     },
     combat: {

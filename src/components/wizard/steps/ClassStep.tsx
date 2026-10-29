@@ -27,7 +27,7 @@ export function ClassStep() {
             >
               <div className="flex items-baseline justify-between">
                 <p className="font-display text-base text-text">{c.name}</p>
-                <span className="font-mono text-[10px] text-text-muted">
+                <span className="font-mono text-xs text-text-muted">
                   {t("wizard.classStep.hd", { die: c.hit_die })}
                 </span>
               </div>
@@ -38,13 +38,13 @@ export function ClassStep() {
                 {c.saving_throws.map((s) => (
                   <span
                     key={s.index}
-                    className="rounded-sm border border-line bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-muted"
+                    className="rounded-sm border border-line bg-surface-elevated px-1.5 py-0.5 font-mono text-xs uppercase tracking-wider text-text-muted"
                   >
                     {t("wizard.classStep.save", { ability: s.name })}
                   </span>
                 ))}
                 {level1?.spellcasting && (
-                  <span className="rounded-sm border border-accent-muted/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent">
+                  <span className="rounded-sm border border-accent-muted/40 bg-accent/10 px-1.5 py-0.5 font-mono text-xs uppercase tracking-wider text-accent">
                     {t("wizard.classStep.spellcaster")}
                   </span>
                 )}

@@ -195,7 +195,7 @@ export function ReviewStep() {
         >
           {busy ? t("wizard.reviewStep.saving") : t("wizard.reviewStep.beginButton")}
         </button>
-        <p className="text-xs text-text-muted/60">
+        <p className="text-xs text-text-muted/80">
           {t("wizard.reviewStep.helper")}
         </p>
       </div>

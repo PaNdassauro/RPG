@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  X,
   MapPin,
   UsersRound,
   Shield,
@@ -17,6 +16,8 @@ import {
 } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
 import { useT } from "@/i18n";
+import { DialogTitle, Sheet } from "@/components/ui/Dialog";
+import { CloseButton } from "@/components/ui/CloseButton";
 import type {
   CompanionEntry,
   FactionEntry,
@@ -44,113 +45,74 @@ export function CodexSheet({ open, onClose }: CodexSheetProps) {
   const activeQuestCount = quests.filter((q) => q.status === "active").length;
   const [tab, setTab] = useState<Tab>("places");
 
-  // ESC closes — keyboard parity with the backdrop click.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  // CSS-only transitions — always rendered, just toggled. No risk of stuck DOM.
   return (
-    <>
-      <div
-        onClick={onClose}
-        aria-hidden={!open}
-        className={cn(
-          "fixed inset-0 z-40 bg-canvas/70 backdrop-blur-[2px] transition-opacity duration-200",
-          open
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none",
-        )}
-      />
-      <aside
-        onClick={(e) => e.stopPropagation()}
-        aria-hidden={!open}
-        className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col border-l border-line bg-surface/95 shadow-[-12px_0_40px_-12px_rgba(0,0,0,0.6)] backdrop-blur transition-transform duration-300 ease-out",
-          open
-            ? "translate-x-0 pointer-events-auto"
-            : "translate-x-full pointer-events-none",
-        )}
-      >
-        <header className="flex items-center justify-between border-b border-line/60 px-5 py-4">
-          <div>
-            <p className="font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
-              {t("play.codex.eyebrow")}
-            </p>
-            <h2 className="mt-0.5 font-display text-lg text-text">
-              {t("play.codex.title")}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-            aria-label={t("common.cancel")}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </header>
-
-        <div className="flex flex-wrap border-b border-line/60 px-5">
-          <TabButton
-            active={tab === "places"}
-            onClick={() => setTab("places")}
-            icon={<MapPin className="h-3.5 w-3.5" />}
-            label={t("play.codex.placesTab")}
-            count={places.length}
-          />
-          <TabButton
-            active={tab === "npcs"}
-            onClick={() => setTab("npcs")}
-            icon={<UsersRound className="h-3.5 w-3.5" />}
-            label={t("play.codex.charactersTab")}
-            count={npcs.length}
-          />
-          <TabButton
-            active={tab === "quests"}
-            onClick={() => setTab("quests")}
-            icon={<Scroll className="h-3.5 w-3.5" />}
-            label={t("play.codex.questsTab")}
-            count={activeQuestCount}
-          />
-          <TabButton
-            active={tab === "factions"}
-            onClick={() => setTab("factions")}
-            icon={<Flag className="h-3.5 w-3.5" />}
-            label={t("play.codex.factionsTab")}
-            count={factions.length}
-          />
-          <TabButton
-            active={tab === "companions"}
-            onClick={() => setTab("companions")}
-            icon={<PawPrint className="h-3.5 w-3.5" />}
-            label={t("play.codex.companionsTab")}
-            count={companions.length}
-          />
-          <TabButton
-            active={tab === "journal"}
-            onClick={() => setTab("journal")}
-            icon={<NotebookPen className="h-3.5 w-3.5" />}
-            label={t("play.codex.journalTab")}
-            count={(campaign?.journal ?? "").length > 0 ? 1 : 0}
-          />
+    <Sheet open={open} onClose={onClose} side="right" className="w-full max-w-3xl">
+      <header className="flex items-center justify-between border-b border-line/60 px-5 py-4">
+        <div>
+          <p className="font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
+            {t("play.codex.eyebrow")}
+          </p>
+          <DialogTitle className="mt-0.5 font-display text-lg text-text">
+            {t("play.codex.title")}
+          </DialogTitle>
         </div>
+        <CloseButton onClick={onClose} />
+      </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {tab === "places" && <PlacesList places={places} />}
-          {tab === "npcs" && <NpcsList npcs={npcs} />}
-          {tab === "quests" && <QuestsList quests={quests} />}
-          {tab === "factions" && <FactionsList factions={factions} />}
-          {tab === "companions" && <CompanionsList companions={companions} />}
-          {tab === "journal" && <JournalPanel />}
-        </div>
-      </aside>
-    </>
+      <div className="flex flex-wrap border-b border-line/60 px-5">
+        <TabButton
+          active={tab === "places"}
+          onClick={() => setTab("places")}
+          icon={<MapPin className="h-3.5 w-3.5" />}
+          label={t("play.codex.placesTab")}
+          count={places.length}
+        />
+        <TabButton
+          active={tab === "npcs"}
+          onClick={() => setTab("npcs")}
+          icon={<UsersRound className="h-3.5 w-3.5" />}
+          label={t("play.codex.charactersTab")}
+          count={npcs.length}
+        />
+        <TabButton
+          active={tab === "quests"}
+          onClick={() => setTab("quests")}
+          icon={<Scroll className="h-3.5 w-3.5" />}
+          label={t("play.codex.questsTab")}
+          count={activeQuestCount}
+        />
+        <TabButton
+          active={tab === "factions"}
+          onClick={() => setTab("factions")}
+          icon={<Flag className="h-3.5 w-3.5" />}
+          label={t("play.codex.factionsTab")}
+          count={factions.length}
+        />
+        <TabButton
+          active={tab === "companions"}
+          onClick={() => setTab("companions")}
+          icon={<PawPrint className="h-3.5 w-3.5" />}
+          label={t("play.codex.companionsTab")}
+          count={companions.length}
+        />
+        <TabButton
+          active={tab === "journal"}
+          onClick={() => setTab("journal")}
+          icon={<NotebookPen className="h-3.5 w-3.5" />}
+          label={t("play.codex.journalTab")}
+          count={(campaign?.journal ?? "").length > 0 ? 1 : 0}
+        />
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {tab === "places" && <PlacesList places={places} />}
+        {tab === "npcs" && <NpcsList npcs={npcs} />}
+        {tab === "quests" && <QuestsList quests={quests} />}
+        {tab === "factions" && <FactionsList factions={factions} />}
+        {tab === "companions" && <CompanionsList companions={companions} />}
+        {tab === "journal" && <JournalPanel />}
+      </div>
+    </Sheet>
   );
 }
 
@@ -181,7 +143,7 @@ function FactionsList({ factions }: { factions: FactionEntry[] }) {
               <h3 className="font-display text-base text-text">{f.name}</h3>
               <span
                 className={cn(
-                  "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest",
+                  "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest",
                   repTone,
                 )}
               >
@@ -223,7 +185,7 @@ function CompanionsList({ companions }: { companions: CompanionEntry[] }) {
           <div className="flex items-center gap-2">
             <PawPrint className="h-3.5 w-3.5 shrink-0 text-accent-muted" />
             <h3 className="font-display text-base text-text">{c.name}</h3>
-            <span className="ml-auto rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+            <span className="ml-auto rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest text-text-muted">
               {t(`play.codex.companionKind.${c.kind}`)}
             </span>
           </div>
@@ -232,13 +194,13 @@ function CompanionsList({ companions }: { companions: CompanionEntry[] }) {
               {c.description}
             </p>
           )}
-          <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-[11px] text-text-muted">
+          <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-xs text-text-muted">
             <span>HP {c.hpCurrent}/{c.hpMax}</span>
             <span>CA {c.ac}</span>
             <span>Inic. {c.initiativeBonus >= 0 ? `+${c.initiativeBonus}` : c.initiativeBonus}</span>
           </div>
           {c.attack && (
-            <p className="mt-1 font-mono text-[11px] text-accent-muted">
+            <p className="mt-1 font-mono text-xs text-accent-muted">
               {c.attack.name}: {c.attack.toHit >= 0 ? `+${c.attack.toHit}` : c.attack.toHit} ·{" "}
               {c.attack.damage} {c.attack.damageType}
             </p>
@@ -275,7 +237,7 @@ function TabButton({
     >
       {icon}
       {label}
-      <span className="font-mono text-[10px] text-text-muted/70">{count}</span>
+      <span className="font-mono text-xs text-text-muted/80">{count}</span>
       {active && (
         <motion.span
           layoutId="codex-tab-underline"
@@ -308,7 +270,7 @@ function PlacesList({ places }: { places: PlaceEntry[] }) {
                 className={cn(
                   "absolute -left-[18px] top-1.5 h-2.5 w-2.5 rounded-full border",
                   isCurrent
-                    ? "border-accent bg-accent shadow-[0_0_12px_2px_rgba(212,175,55,0.5)] animate-pulse"
+                    ? "border-accent bg-accent shadow-[0_0_12px_2px_rgba(212,175,55,0.5)] motion-safe:animate-pulse"
                     : "border-accent-muted bg-surface",
                 )}
               />
@@ -328,7 +290,7 @@ function PlacesList({ places }: { places: PlaceEntry[] }) {
                   {p.name}
                 </h3>
                 {isCurrent && (
-                  <span className="ml-auto rounded-sm border border-accent bg-accent/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-accent">
+                  <span className="ml-auto rounded-sm border border-accent bg-accent/15 px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest text-accent">
                     {t("play.codex.here")}
                   </span>
                 )}
@@ -397,7 +359,7 @@ function DispositionBar({ disposition }: { disposition: number }) {
         : "text-text-muted";
   return (
     <div className="mt-2 flex items-center gap-2">
-      <p className={cn("font-mono text-[10px] uppercase tracking-widest", tone)}>
+      <p className={cn("font-mono text-xs uppercase tracking-widest", tone)}>
         {t(labelKey)}
       </p>
       <div className="flex flex-1 items-center justify-between gap-0.5">
@@ -458,7 +420,7 @@ function KindTag({ kind }: { kind: NpcEntry["kind"] }) {
   return (
     <span
       className={cn(
-        "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest",
+        "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest",
         className,
       )}
     >
@@ -555,7 +517,7 @@ function QuestStatusTag({ status }: { status: Quest["status"] }) {
   return (
     <span
       className={cn(
-        "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest",
+        "ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest",
         className,
       )}
     >
@@ -567,7 +529,7 @@ function QuestStatusTag({ status }: { status: Quest["status"] }) {
 function Empty({ text }: { text: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-      <p className="font-display text-[10px] uppercase tracking-[0.4em] text-text-muted/50">
+      <p className="font-display text-[10px] uppercase tracking-[0.4em] text-text-muted/80">
         {text}
       </p>
     </div>
@@ -586,6 +548,18 @@ function JournalPanel() {
   useEffect(() => {
     setDraft(campaign?.journal ?? "");
   }, [campaign?.id, campaign?.journal]);
+
+  // Flush an unsaved draft when the sheet closes (the panel unmounts), so the
+  // last <600ms of typing isn't lost to the debounce below.
+  const latest = useRef({ draft, saved: initial });
+  latest.current = { draft, saved: campaign?.journal ?? "" };
+  useEffect(
+    () => () => {
+      const { draft: d, saved } = latest.current;
+      if (d !== saved) void updateJournal(d);
+    },
+    [updateJournal],
+  );
 
   // Debounced autosave: 600ms after last keypress.
   useEffect(() => {
@@ -607,7 +581,7 @@ function JournalPanel() {
         <p className="font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
           {t("play.codex.journalEyebrow")}
         </p>
-        <p className="font-mono text-[10px] text-text-muted/60">
+        <p className="font-mono text-xs text-text-muted/80">
           {saved ? t("play.codex.journalSaved") : t("play.codex.journalUnsaved")}
         </p>
       </div>
@@ -616,9 +590,9 @@ function JournalPanel() {
         onChange={(e) => setDraft(e.target.value)}
         placeholder={t("play.codex.journalPlaceholder")}
         spellCheck
-        className="flex-1 min-h-[60vh] resize-none rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm leading-relaxed text-text placeholder:text-text-muted/40 focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+        className="flex-1 min-h-[60vh] resize-none rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-base leading-relaxed text-text placeholder:text-text-muted/60 focus:border-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas sm:text-sm"
       />
-      <p className="text-[11px] leading-relaxed text-text-muted/60">
+      <p className="text-xs leading-relaxed text-text-muted/80">
         {t("play.codex.journalHint")}
       </p>
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Skull, Sparkles, BookOpen } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
@@ -7,6 +7,7 @@ import { newId } from "@/lib/id";
 import { useT } from "@/i18n";
 import type { ChatMessage } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
+import { useOverlayLayer } from "@/components/ui/overlay";
 
 export function DeathScreen() {
   const t = useT();
@@ -19,6 +20,11 @@ export function DeathScreen() {
   const endCampaign = useSessionStore((s) => s.endCampaign);
 
   const [busy, setBusy] = useState(false);
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Not dismissible: the player must pick an ending. Still a real modal layer
+  // (focus trapped, scroll locked, sits above every dialog and sheet).
+  useOverlayLayer(!!pending, panelRef, { onClose: () => undefined, dismissible: false });
 
   const sendChoice = useCallback(
     async (text: string): Promise<void> => {
@@ -66,27 +72,32 @@ export function DeathScreen() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/95 backdrop-blur-sm"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-canvas/95 backdrop-blur-sm"
         >
           <motion.div
+            ref={panelRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
             initial={{ scale: 0.96, y: 8, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             transition={{ delay: 0.15, type: "spring", stiffness: 180, damping: 22 }}
-            className="mx-6 flex w-full max-w-xl flex-col items-center gap-6 rounded-md border border-danger/50 bg-surface/80 px-8 py-10 text-center shadow-[0_0_60px_-12px_rgba(214,93,93,0.5),0_0_120px_-30px_rgba(214,93,93,0.4)]"
+            className="mx-6 flex w-full max-w-xl flex-col items-center gap-6 outline-none rounded-md border border-danger/50 bg-surface/80 px-8 py-10 text-center shadow-[0_0_60px_-12px_rgba(214,93,93,0.5),0_0_120px_-30px_rgba(214,93,93,0.4)]"
           >
             <motion.div
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.5 }}
             >
-              <Skull className="h-10 w-10 text-danger/80" />
+              <Skull className="h-10 w-10 text-danger/80" aria-hidden="true" />
             </motion.div>
 
             <div className="flex flex-col gap-2">
-              <p className="font-display text-[10px] uppercase tracking-[0.5em] text-danger/70">
+              <p className="font-display text-[10px] uppercase tracking-[0.5em] text-danger">
                 {t("play.death.eyebrow")}
               </p>
-              <h2 className="font-display text-3xl text-text">
+              <h2 id={titleId} className="font-display text-3xl text-text">
                 {t("play.death.title", { name: character?.name ?? "" })}
               </h2>
               <p className="mx-auto max-w-md text-sm leading-relaxed text-text-muted">

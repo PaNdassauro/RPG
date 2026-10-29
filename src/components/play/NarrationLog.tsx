@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Dices, ChevronDown, Sparkles, Search, X } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
 import { DiceRoll } from "@/components/dice/DiceRoll";
@@ -13,6 +13,9 @@ import {
 import { useT } from "@/i18n";
 import type { ChatMessage, DiceRollRecord } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
+
+/** Rolls older than this are replayed history on reload: animate them, but don't announce. */
+const FRESH_ROLL_MS = 15_000;
 
 type EventRail = "damage" | "heal" | "milestone" | null;
 
@@ -124,15 +127,16 @@ export function NarrationLog() {
             exit={{ opacity: 0, y: -8 }}
             className="absolute left-1/2 top-2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-md border border-line bg-surface/95 px-3 py-1.5 shadow backdrop-blur"
           >
-            <Search className="h-3.5 w-3.5 text-text-muted" />
+            <Search className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
             <input
               ref={searchInputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("play.narrationLog.searchPlaceholder")}
-              className="w-56 bg-transparent text-sm text-text placeholder:text-text-muted/40 focus:outline-none"
+              aria-label={t("play.narrationLog.searchPlaceholder")}
+              className="w-56 rounded-sm bg-transparent text-base text-text placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas sm:text-sm"
             />
-            <span className="font-mono text-[10px] text-text-muted/70">
+            <span className="font-mono text-xs text-text-muted/80">
               {lowerQuery
                 ? t("play.narrationLog.searchHits", { n: filteredMessages.length })
                 : t("play.narrationLog.searchKbd")}
@@ -143,8 +147,8 @@ export function NarrationLog() {
                 setSearchOpen(false);
                 setSearch("");
               }}
-              className="text-text-muted hover:text-text"
-              aria-label="close"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors duration-150 ease-out hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              aria-label={t("common.close")}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -156,23 +160,33 @@ export function NarrationLog() {
         className="relative flex-1 overflow-y-auto px-1 py-6"
       >
         <div className="mx-auto flex max-w-prose flex-col gap-6">
-          {filteredMessages.length === 0 && !thinking && !streaming && (
-            <p className="text-center text-xs uppercase tracking-[0.3em] text-text-muted/50">
-              {lowerQuery
-                ? t("play.narrationLog.searchNone")
-                : t("play.narrationLog.worldQuiet")}
-            </p>
-          )}
+          {/* Finalized messages only: a polite log announces each new entry once.
+              The streaming draft below stays outside so tokens aren't read out
+              one by one. Live announcements pause while a search filters the list. */}
+          <div
+            role="log"
+            aria-live={lowerQuery ? "off" : "polite"}
+            aria-label={t("play.narrationLog.logLabel")}
+            className="flex flex-col gap-6"
+          >
+            {filteredMessages.length === 0 && !thinking && !streaming && (
+              <p className="text-center text-xs uppercase tracking-[0.3em] text-text-muted/80">
+                {lowerQuery
+                  ? t("play.narrationLog.searchNone")
+                  : t("play.narrationLog.worldQuiet")}
+              </p>
+            )}
 
-          {filteredMessages.map((m) => (
-            <Message
-              key={m.id}
-              message={m}
-              characterInitial={character?.name?.[0]?.toUpperCase() ?? "?"}
-              diceRolls={diceRolls}
-              registry={registry}
-            />
-          ))}
+            {filteredMessages.map((m) => (
+              <Message
+                key={m.id}
+                message={m}
+                characterInitial={character?.name?.[0]?.toUpperCase() ?? "?"}
+                diceRolls={diceRolls}
+                registry={registry}
+              />
+            ))}
+          </div>
 
           {thinking && !lowerQuery && <ThinkingPulse text={t("play.narrationLog.dmThinking")} />}
           {draftDm && !lowerQuery && <DmDraft text={draftDm} />}
@@ -187,9 +201,9 @@ export function NarrationLog() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full border border-accent-muted/60 bg-accent/15 px-4 py-1.5 font-display text-[10px] uppercase tracking-[0.3em] text-accent shadow-lg backdrop-blur transition hover:bg-accent/25"
+            className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 flex min-h-9 items-center gap-1.5 rounded-full border border-accent-muted/60 bg-accent/15 px-4 py-1.5 font-display text-[10px] uppercase tracking-[0.3em] text-accent shadow-lg backdrop-blur transition-colors duration-150 ease-out hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-[0.97]"
           >
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
             {t("play.narrationLog.jumpButton")}
           </motion.button>
         )}
@@ -352,7 +366,7 @@ function SystemMessage({ text, diceRollIds, diceRolls }: SystemMessageProps) {
         "flex items-start gap-3 rounded-md border border-line/70 bg-surface/60 px-4 py-3 font-mono text-xs text-text-muted",
       )}
     >
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-muted" />
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-muted" aria-hidden="true" />
       <div className="flex-1">
         {text && <p className="text-text-muted">{text}</p>}
         {rolls.map((r) => (
@@ -369,6 +383,7 @@ function SystemMessage({ text, diceRollIds, diceRolls }: SystemMessageProps) {
                 isFumble: r.isFumble,
               }}
               dc={r.dc}
+              announce={Date.now() - r.ts < FRESH_ROLL_MS}
               autoPlay
             />
           </div>
@@ -379,14 +394,17 @@ function SystemMessage({ text, diceRollIds, diceRolls }: SystemMessageProps) {
 }
 
 function ThinkingPulse({ text }: { text: string }) {
+  const reduceMotion = useReducedMotion();
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
+      role="status"
       className="font-display text-sm italic text-accent-muted"
     >
+      {/* A looping fade is motion with no end; reduced-motion users get static text. */}
       <motion.span
-        animate={{ opacity: [0.4, 1, 0.4] }}
+        animate={reduceMotion ? { opacity: 1 } : { opacity: [0.4, 1, 0.4] }}
         transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
       >
         {text}

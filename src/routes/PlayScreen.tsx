@@ -14,6 +14,8 @@ import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
 import { getWorld } from "@/data/settings";
 import { useT } from "@/i18n";
+import { cn } from "@/lib/cn";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/ActionMenu";
 import { runDmTurn } from "@/dm/loop";
 import { CharacterCrest } from "@/components/play/CharacterCrest";
 import { NarrationLog } from "@/components/play/NarrationLog";
@@ -45,6 +47,7 @@ export function PlayScreen() {
   const messages = useSessionStore((s) => s.messages);
   const error = useSessionStore((s) => s.error);
   const activeProvider = useKeysStore((s) => s.activeProvider);
+  const t = useT();
 
   // Load campaign on mount.
   useEffect(() => {
@@ -147,7 +150,7 @@ export function PlayScreen() {
         open={mobileLeftOpen}
         onClose={() => setMobileLeftOpen(false)}
         side="left"
-        title="Hero"
+        title={t("play.heroTitle")}
       >
         <div className="flex flex-col gap-4">
           <CharacterCrest />
@@ -158,7 +161,7 @@ export function PlayScreen() {
         open={mobileRightOpen}
         onClose={() => setMobileRightOpen(false)}
         side="right"
-        title="World"
+        title={t("play.worldTitle")}
       >
         <RightRail />
       </MobileSheet>
@@ -188,6 +191,33 @@ function EndedBanner() {
   );
 }
 
+const HEADER_BTN =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition-colors duration-150 ease-out hover:border-accent-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-[0.97] lg:h-8 lg:w-8";
+
+function HeaderButton({
+  label,
+  icon,
+  onClick,
+  className,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn(HEADER_BTN, className)}
+    >
+      {icon}
+    </button>
+  );
+}
+
 function TopBar({
   title,
   location,
@@ -214,41 +244,48 @@ function TopBar({
   onOpenCheatsheet: () => void;
 }) {
   const t = useT();
+  const icon = "h-4 w-4";
+  // Below `lg` the six tools collapse into one overflow menu so the header
+  // never outgrows a phone viewport; from `lg` they sit inline as icon buttons.
+  const tools: ActionMenuItem[] = [
+    { key: "cheatsheet", label: t("play.cheatsheet.title"), icon: <BookText className={icon} />, onSelect: onOpenCheatsheet },
+    { key: "rolls", label: t("play.rollLog.title"), icon: <Dices className={icon} />, onSelect: onOpenRollLog },
+    { key: "recap", label: t("play.recap.title"), icon: <Scroll className={icon} />, onSelect: onOpenRecap },
+    { key: "sheet", label: t("play.sheet.eyebrow"), icon: <ScrollText className={icon} />, onSelect: onOpenSheet },
+    { key: "codex", label: t("play.codexTitle"), icon: <BookOpen className={icon} />, onSelect: onOpenCodex },
+    { key: "settings", label: t("play.settingsTitle"), icon: <Settings className={icon} />, to: "/settings" },
+  ];
   return (
-    <header className="flex shrink-0 items-center justify-between border-b border-line/60 bg-canvas/80 px-4 py-2.5 backdrop-blur">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
+    <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-line/60 bg-canvas/80 px-4 py-2.5 backdrop-blur">
+      <div className="flex shrink-0 items-center gap-2">
+        <HeaderButton
+          label={t("play.heroTitle")}
+          icon={<User className={icon} />}
           onClick={onOpenMobileLeft}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text lg:hidden"
-          title="Hero"
-        >
-          <User className="h-4 w-4" />
-        </button>
+          className="lg:hidden"
+        />
         <Link
           to="/"
-          className="font-display text-[10px] uppercase tracking-[0.4em] text-text-muted transition hover:text-text"
+          className="inline-flex min-h-10 items-center font-display text-[10px] uppercase tracking-[0.4em] text-text-muted transition-colors duration-150 ease-out hover:text-text lg:min-h-0"
         >
           {t("play.backTitle")}
         </Link>
       </div>
-      <div className="text-center">
-        <p className="font-display text-base text-text leading-none">{title}</p>
-        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+      <div className="min-w-0 flex-1 text-center">
+        <p className="truncate font-display text-base leading-none text-text">{title}</p>
+        <p className="mt-0.5 hidden truncate font-mono text-xs uppercase tracking-widest text-text-muted sm:block">
           {worldName ? `${worldName} · ${location}` : location}
         </p>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
+      <div className="flex shrink-0 items-center gap-2">
+        <HeaderButton
+          label={t("play.worldTitle")}
+          icon={<Compass className={icon} />}
           onClick={onOpenMobileRight}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text lg:hidden"
-          title="World"
-        >
-          <Compass className="h-4 w-4" />
-        </button>
+          className="lg:hidden"
+        />
         <span
-          className={`hidden rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest sm:inline-flex ${
+          className={`hidden rounded-sm border px-2 py-0.5 font-mono text-xs uppercase tracking-widest sm:inline-flex ${
             activeProvider
               ? "border-accent-muted/60 bg-accent/10 text-accent"
               : "border-line bg-surface text-text-muted"
@@ -257,53 +294,29 @@ function TopBar({
         >
           {activeProvider ?? t("play.stubChip")}
         </span>
-        <button
-          type="button"
-          onClick={onOpenCheatsheet}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title={t("play.cheatsheet.title")}
-        >
-          <BookText className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenRollLog}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title={t("play.rollLog.title")}
-        >
-          <Dices className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenRecap}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title={t("play.recap.title")}
-        >
-          <Scroll className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenSheet}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title="Ficha"
-        >
-          <ScrollText className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenCodex}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title={t("play.codexTitle")}
-        >
-          <BookOpen className="h-4 w-4" />
-        </button>
-        <Link
-          to="/settings"
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-          title={t("play.settingsTitle")}
-        >
-          <Settings className="h-4 w-4" />
-        </Link>
+        <ActionMenu label={t("play.moreMenu")} items={tools} className="lg:hidden" />
+        <div className="hidden items-center gap-2 lg:flex">
+          {tools.map((tool) =>
+            tool.to ? (
+              <Link
+                key={tool.key}
+                to={tool.to}
+                title={tool.label}
+                aria-label={tool.label}
+                className={HEADER_BTN}
+              >
+                {tool.icon}
+              </Link>
+            ) : (
+              <HeaderButton
+                key={tool.key}
+                label={tool.label}
+                icon={tool.icon}
+                onClick={tool.onSelect ?? (() => undefined)}
+              />
+            ),
+          )}
+        </div>
       </div>
     </header>
   );
@@ -324,7 +337,7 @@ function RightRail() {
         <p className="mt-1.5 font-display text-base text-text">
           {campaign?.currentLocation.name ?? "—"}
         </p>
-        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted/70">
+        <p className="mt-0.5 font-mono text-xs uppercase tracking-widest text-text-muted/80">
           {t("play.rightRail.day", { n: campaign?.inWorldDay ?? 1 })}
         </p>
         {campaign?.currentLocation.description && (
@@ -350,7 +363,7 @@ function RightRail() {
           {t("play.rightRail.quests")}
         </p>
         {activeQuests.length === 0 ? (
-          <p className="mt-1 text-xs italic text-text-muted/40">
+          <p className="mt-1 text-xs italic text-text-muted/80">
             {t("play.rightRail.noQuests")}
           </p>
         ) : (
@@ -362,7 +375,7 @@ function RightRail() {
               >
                 <p className="font-display text-sm text-text">{q.title}</p>
                 {q.objective && (
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-text-muted/80">
+                  <p className="mt-0.5 text-xs leading-relaxed text-text-muted/80">
                     {q.objective}
                   </p>
                 )}

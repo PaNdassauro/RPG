@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
+import { MotionConfig } from "framer-motion";
 import { ParchmentBackground } from "@/components/atmosphere/ParchmentBackground";
 import { TitleScreen } from "@/routes/TitleScreen";
 
@@ -29,21 +30,25 @@ export default function App() {
   }, []);
 
   return (
-    <div className="relative min-h-dvh text-text">
-      <ParchmentBackground />
-      <main className="relative z-10">
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<TitleScreen />} />
-            <Route path="/_dice-demo" element={<DiceDemo />} />
-            <Route path="/character/new" element={<CharacterWizard />} />
-            <Route path="/play/:campaignId" element={<PlayScreen />} />
-            <Route path="/campaigns" element={<CampaignsScreen />} />
-            <Route path="/settings" element={<SettingsScreen />} />
-          </Routes>
-        </Suspense>
-      </main>
-    </div>
+    // reducedMotion="user": framer-motion drops transform/layout animation when the
+    // OS asks for reduced motion and keeps opacity/colour fades.
+    <MotionConfig reducedMotion="user">
+      <div className="relative min-h-dvh text-text">
+        <ParchmentBackground />
+        <main className="relative z-10">
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<TitleScreen />} />
+              <Route path="/_dice-demo" element={<DiceDemo />} />
+              <Route path="/character/new" element={<CharacterWizard />} />
+              <Route path="/play/:campaignId" element={<PlayScreen />} />
+              <Route path="/campaigns" element={<CampaignsScreen />} />
+              <Route path="/settings" element={<SettingsScreen />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+    </MotionConfig>
   );
 }
 

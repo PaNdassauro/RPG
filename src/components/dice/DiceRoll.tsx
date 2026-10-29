@@ -5,10 +5,19 @@ import { formatExpression } from "@/engine/dice";
 import type { DieRoll, DiceRollResult } from "@/engine/types";
 import { playDiceClack } from "@/state/soundStore";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 interface DiceRollProps {
   result: DiceRollResult;
   dc?: number | null;
+  /**
+   * Authoritative outcome from the engine's resolution. When omitted the verdict
+   * falls back to `total >= dc`. A natural 20/1 only adds flavor (the "Critical" /
+   * "Fumble" words) and never flips the outcome.
+   */
+  success?: boolean | null;
+  /** Set false for replayed history so reloading a campaign doesn't read out every old roll. */
+  announce?: boolean;
   autoPlay?: boolean;
   onComplete?: () => void;
 }
@@ -19,7 +28,15 @@ const TUMBLE_MS = 700;
 const SETTLE_MS = 120;
 const MODIFIER_DELAY_MS = 260;
 
-export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: DiceRollProps) {
+export function DiceRoll({
+  result,
+  dc = null,
+  success: successProp,
+  announce = true,
+  autoPlay = true,
+  onComplete,
+}: DiceRollProps) {
+  const t = useT();
   const reduceMotion = useReducedMotion();
   const [phase, setPhase] = useState<Phase>(reduceMotion ? "done" : "drop");
   const [tick, setTick] = useState(0);
@@ -65,10 +82,41 @@ export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: Dic
 
   const success = useMemo(() => {
     if (dc == null) return null;
-    if (result.isCritical) return true;
-    if (result.isFumble) return false;
-    return result.total >= dc;
-  }, [dc, result.total, result.isCritical, result.isFumble]);
+    return successProp ?? result.total >= dc;
+  }, [dc, successProp, result.total]);
+
+  // Crit/fumble words are flavor on top of the real outcome, never against it.
+  const verdictWord =
+    success == null
+      ? ""
+      : success
+        ? result.isCritical
+          ? t("dice.verdict.critical")
+          : t("dice.verdict.success")
+        : result.isFumble
+          ? t("dice.verdict.fumble")
+          : t("dice.verdict.failure");
+
+  // Screen readers get one polite line when the roll lands; the animated
+  // visuals below are aria-hidden so nothing is read twice or mid-tumble.
+  const announcement =
+    announce && phase === "done"
+      ? dc != null && success != null
+        ? t("dice.announceDc", {
+            expression: formatExpression(result.expression, result.mode),
+            total: result.total,
+            dc,
+            verdict: verdictWord,
+          })
+        : t("dice.announce", {
+            expression: formatExpression(result.expression, result.mode),
+            total: result.total,
+          })
+      : "";
+  const [liveText, setLiveText] = useState("");
+  useEffect(() => {
+    setLiveText(announcement);
+  }, [announcement]);
 
   const settled = phase === "settle" || phase === "modifier" || phase === "verdict" || phase === "done";
   const showModifier = phase === "modifier" || phase === "verdict" || phase === "done";
@@ -87,7 +135,7 @@ export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: Dic
   return (
     <div className="relative flex flex-col items-center gap-3">
       {/* Crit gold radial bloom — anchored to the dice row when there's one hero die. */}
-      <div className="relative">
+      <div className="relative" aria-hidden="true">
         <AnimatePresence>
           {heroCrit && dieCount === 1 && (
             <motion.div
@@ -132,11 +180,11 @@ export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: Dic
       </div>
 
       {/* Roll details */}
-      <div className="flex min-h-[2rem] flex-col items-center gap-1">
+      <div className="flex min-h-[2rem] flex-col items-center gap-1" aria-hidden="true">
         <p className="font-mono text-xs text-text-muted">
           {formatExpression(result.expression, result.mode)}
           {result.mode && (
-            <span className="ml-2 text-text-muted/70">
+            <span className="ml-2 text-text-muted/80">
               [{result.rolls.map((r) => r.value).join(", ")} → {result.kept[0]?.value}]
             </span>
           )}
@@ -166,6 +214,7 @@ export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: Dic
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
+            aria-hidden="true"
             className="flex w-full max-w-xs flex-col items-center gap-1"
           >
             <div className="h-px w-24 bg-accent/40" />
@@ -175,18 +224,16 @@ export function DiceRoll({ result, dc = null, autoPlay = true, onComplete }: Dic
                 success ? "text-accent" : "text-danger",
               )}
             >
-              {result.isCritical
-                ? "Critical"
-                : result.isFumble
-                  ? "Fumble"
-                  : success
-                    ? "Success"
-                    : "Failure"}
+              {verdictWord}
             </p>
-            <p className="font-mono text-xs text-text-muted/80">DC {dc}</p>
+            <p className="font-mono text-xs text-text-muted/80">{t("dice.dc", { n: dc ?? 0 })}</p>
           </motion.div>
         )}
       </AnimatePresence>
+
+      <p role="status" aria-live="polite" className="sr-only">
+        {liveText}
+      </p>
     </div>
   );
 }

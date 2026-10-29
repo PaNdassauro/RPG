@@ -22,6 +22,11 @@ const ABILITY_LABEL_PT: Record<string, string> = {
   cha: "Carisma",
 };
 
+interface RollingState {
+  result: DiceRollResult;
+  success: boolean;
+}
+
 export function PendingSaveCard() {
   const t = useT();
   const pending = useSessionStore((s) => s.pendingSave);
@@ -30,7 +35,7 @@ export function PendingSaveCard() {
   const appendDiceRoll = useSessionStore((s) => s.appendDiceRoll);
   const setPendingSave = useSessionStore((s) => s.setPendingSave);
 
-  const [rolling, setRolling] = useState<DiceRollResult | null>(null);
+  const [rolling, setRolling] = useState<RollingState | null>(null);
 
   const onRoll = useCallback(async () => {
     if (!pending || !character || !campaignId || rolling) return;
@@ -54,7 +59,7 @@ export function PendingSaveCard() {
       resolution = { ...resolution, success: false };
     }
 
-    setRolling(resolution.result);
+    setRolling({ result: resolution.result, success: resolution.success });
 
     const ts = Date.now();
     const rollRecord: DiceRollRecord = {
@@ -72,15 +77,17 @@ export function PendingSaveCard() {
       ts,
     };
 
+    // Outcome comes from `resolution.success` (DC only); a natural 20/1 never
+    // auto-succeeds/fails a save and is mentioned purely as flavor.
     const outcome = condMode.autoFail
       ? t("play.save.autoFail")
-      : resolution.isCritical
-        ? t("play.check.crit")
+      : resolution.success
+        ? resolution.isCritical
+          ? t("play.check.successNat20")
+          : t("play.check.success")
         : resolution.isFumble
-          ? t("play.check.fumble")
-          : resolution.success
-            ? t("play.check.success")
-            : t("play.check.failure");
+          ? t("play.check.failureNat1")
+          : t("play.check.failure");
 
     const sysContent = t("play.save.systemMessage", {
       ability: ABILITY_LABEL_PT[pending.ability] ?? pending.ability,
@@ -126,7 +133,7 @@ export function PendingSaveCard() {
 
 interface CardBodyProps {
   pending: PendingSave;
-  rolling: DiceRollResult | null;
+  rolling: RollingState | null;
   onRoll: () => void;
   t: ReturnType<typeof useT>;
   character: ReturnType<typeof useSessionStore.getState>["character"];
@@ -177,7 +184,7 @@ function CardBody({ pending, rolling, onRoll, t, character }: CardBodyProps) {
               {pending.reason}
             </p>
           )}
-          <p className="mt-2 font-mono text-[11px] text-text-muted/80">
+          <p className="mt-2 font-mono text-xs text-text-muted/80">
             mod {aMod >= 0 ? `+${aMod}` : aMod}
             {proficient && t("play.save.proficient")}
           </p>
@@ -197,7 +204,7 @@ function CardBody({ pending, rolling, onRoll, t, character }: CardBodyProps) {
 
       {rolling && (
         <div className="mt-4 flex justify-center border-t border-line/40 pt-4">
-          <DiceRoll result={rolling} dc={pending.dc} autoPlay />
+          <DiceRoll result={rolling.result} dc={pending.dc} success={rolling.success} autoPlay />
         </div>
       )}
     </motion.div>

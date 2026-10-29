@@ -362,7 +362,7 @@ function AttacksPanel() {
         />
       )}
       {encounter && maxAttacks > 1 && (
-        <div className="flex items-center justify-between rounded-sm border border-accent-muted/40 bg-accent/5 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-accent-muted">
+        <div className="flex items-center justify-between rounded-sm border border-accent-muted/40 bg-accent/5 px-2 py-1 font-mono text-xs uppercase tracking-widest text-accent-muted">
           <span>{t("play.actionPanel.multiAttack")}</span>
           <span className="text-accent">
             {attacksLeft}/{maxAttacks}
@@ -370,12 +370,12 @@ function AttacksPanel() {
         </div>
       )}
       {isRaging && (
-        <div className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-danger">
+        <div className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 font-mono text-xs uppercase tracking-widest text-danger">
           {t("play.actionPanel.rageActive", { bonus: rageBonus })}
         </div>
       )}
       {sneakAttack?.hasFeature && encounter && sneakAttack.expression && (
-        <label className="flex cursor-pointer items-center justify-between rounded-sm border border-accent/40 bg-accent/5 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-accent">
+        <label className="flex cursor-pointer items-center justify-between rounded-sm border border-accent/40 bg-accent/5 px-2 py-1 font-mono text-xs uppercase tracking-widest text-accent">
           <span className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -392,7 +392,7 @@ function AttacksPanel() {
         </label>
       )}
       {canSmite && encounter && (
-        <div className="flex items-center justify-between rounded-sm border border-accent/40 bg-accent/5 px-2 py-1 font-mono text-[10px] uppercase tracking-widest">
+        <div className="flex items-center justify-between rounded-sm border border-accent/40 bg-accent/5 px-2 py-1 font-mono text-xs uppercase tracking-widest">
           <span className="text-accent">{t("play.actionPanel.smiteLabel")}</span>
           <div className="flex gap-1">
             {[0, 1, 2, 3, 4].map((lvl) => (
@@ -424,7 +424,7 @@ function AttacksPanel() {
             >
               <div>
                 <p className="font-display text-sm text-text">{a.name}</p>
-                <p className="font-mono text-[10px] text-text-muted">
+                <p className="font-mono text-xs text-text-muted">
                   {a.damage.dice}
                   {a.damage.mod >= 0 ? `+${a.damage.mod}` : a.damage.mod} {a.damage.type}
                 </p>
@@ -459,7 +459,7 @@ function TargetPicker({
   const t = useT();
   return (
     <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5">
-      <p className="mb-1 font-display text-[9px] uppercase tracking-[0.3em] text-danger/80">
+      <p className="mb-1 font-display text-[10px] uppercase tracking-[0.3em] text-danger/80">
         {t("play.actionPanel.target")}
       </p>
       <div className="flex flex-wrap gap-1">
@@ -471,7 +471,7 @@ function TargetPicker({
               type="button"
               onClick={() => onSelect(tgt.id)}
               className={cn(
-                "rounded-sm border px-2 py-0.5 font-mono text-[10px] transition",
+                "rounded-sm border px-2 py-0.5 font-mono text-xs transition",
                 active
                   ? "border-danger bg-danger/15 text-danger"
                   : "border-line bg-surface text-text-muted hover:border-danger/40 hover:text-text",
@@ -512,7 +512,7 @@ function SpellsPanel({ onOpenSheet }: { onOpenSheet?: (tab: "spells" | "summary"
   return (
     <div className="mt-1 flex flex-col gap-2">
       {concentrating && (
-        <div className="flex items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-[11px] text-accent">
+        <div className="flex items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-accent">
           <Sparkles className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1 truncate">
             {t("play.actionPanel.concentrationActive", { spell: concentrating.spellName })}
@@ -520,14 +520,14 @@ function SpellsPanel({ onOpenSheet }: { onOpenSheet?: (tab: "spells" | "summary"
           <button
             type="button"
             onClick={() => void endConcentration()}
-            className="shrink-0 rounded-sm border border-accent/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider transition hover:bg-accent/20"
+            className="shrink-0 rounded-sm border border-accent/40 px-1.5 py-0.5 font-mono text-xs uppercase tracking-wider transition hover:bg-accent/20"
           >
             {t("play.actionPanel.dropConcentration")}
           </button>
         </div>
       )}
       <div className="rounded-md border border-line bg-surface px-3 py-2">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-text-muted">
+        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-text-muted">
           <span>{t("play.actionPanel.slotsLabel")}</span>
           {!hasKnown && (
             <span className="text-accent">{t("play.actionPanel.spellsEmptyTitle")}</span>
@@ -535,7 +535,7 @@ function SpellsPanel({ onOpenSheet }: { onOpenSheet?: (tab: "spells" | "summary"
         </div>
         <ul className="mt-1.5 flex flex-col gap-1">
           {rows.map((r) => (
-            <li key={r.level} className="flex items-center justify-between text-[11px]">
+            <li key={r.level} className="flex items-center justify-between text-xs">
               <span className="font-mono text-text-muted">
                 {t("play.actionPanel.slotLabel", { level: r.level })}
               </span>
@@ -556,7 +556,7 @@ function SpellsPanel({ onOpenSheet }: { onOpenSheet?: (tab: "spells" | "summary"
           ))}
         </ul>
         {hasKnown && (
-          <p className="mt-2 font-mono text-[10px] text-text-muted/70">
+          <p className="mt-2 font-mono text-xs text-text-muted/80">
             {t("play.actionPanel.knownSummary", {
               cantrips: cantripCount,
               spells: knownCount,
@@ -598,10 +598,10 @@ function PotionsPanel() {
             <span className="font-display text-sm text-text">
               {p.name}{" "}
               {p.qty > 1 && (
-                <span className="ml-1 font-mono text-[10px] text-text-muted">×{p.qty}</span>
+                <span className="ml-1 font-mono text-xs text-text-muted">×{p.qty}</span>
               )}
             </span>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-accent">
+            <span className="font-mono text-xs uppercase tracking-widest text-accent">
               {t("play.actionPanel.drink")}
             </span>
           </button>
@@ -666,10 +666,10 @@ function RestPanel() {
   return (
     <div className="mt-1 flex flex-col gap-2">
       <div>
-        <p className="font-display text-[9px] uppercase tracking-[0.25em] text-text-muted">
+        <p className="font-display text-[10px] uppercase tracking-[0.25em] text-text-muted">
           {t("play.actionPanel.shortRest")}
         </p>
-        <p className="mt-0.5 text-[11px] text-text-muted/70">
+        <p className="mt-0.5 text-xs text-text-muted/80">
           {t("play.actionPanel.shortRestHint")}
         </p>
         <ul className="mt-1 flex flex-col gap-1">
@@ -678,7 +678,7 @@ function RestPanel() {
               key={hd.classId}
               className="flex items-center justify-between rounded-md border border-line bg-surface px-2.5 py-1"
             >
-              <span className="font-mono text-[11px] text-text">
+              <span className="font-mono text-xs text-text">
                 d{hd.die}{" "}
                 <span className="text-text-muted">
                   {hd.current}/{hd.max}
@@ -688,7 +688,7 @@ function RestPanel() {
                 type="button"
                 disabled={hd.current <= 0}
                 onClick={() => onSpendHitDie(hd.classId, hd.die)}
-                className="rounded-sm border border-line bg-surface px-2 py-0.5 font-display text-[9px] uppercase tracking-widest text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-30"
+                className="rounded-sm border border-line bg-surface px-2 py-0.5 font-display text-[10px] uppercase tracking-widest text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <Bed className="mr-1 inline-block h-3 w-3" />
                 {t("play.actionPanel.spendHd")}
@@ -812,7 +812,7 @@ function PowersPanel() {
                 <p className="truncate font-display text-sm text-text">
                   {t(`play.actionPanel.powerName.${c.id}`)}
                 </p>
-                <p className="font-mono text-[10px] text-text-muted">
+                <p className="font-mono text-xs text-text-muted">
                   {remaining}/{c.max} · {t(`play.actionPanel.powerRest.${c.perRest}`)}
                   {c.die && <> · d{c.die}</>}
                 </p>
@@ -869,5 +869,5 @@ function PowerIcon({ id }: { id: string }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="mt-1 py-2 text-center text-[11px] text-text-muted/50">{text}</p>;
+  return <p className="mt-1 py-2 text-center text-xs text-text-muted/80">{text}</p>;
 }

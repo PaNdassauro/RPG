@@ -35,7 +35,7 @@ export function LiveSheet() {
   return (
     <aside className="sticky top-6 flex w-full flex-col gap-5 rounded-md border border-line bg-surface/40 p-5 backdrop-blur">
       <div className="-mx-2 -mt-2 rounded-md bg-surface/60 px-3 py-2">
-        <p className="font-display text-[9px] uppercase tracking-[0.4em] text-text-muted">
+        <p className="font-display text-[10px] uppercase tracking-[0.4em] text-text-muted">
           {t("liveSheet.world")}
         </p>
         <p className="mt-0.5 font-display text-sm text-accent">{world.name}</p>
@@ -98,7 +98,7 @@ export function LiveSheet() {
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded-md border border-line/60 bg-surface px-2 py-2 text-center">
-      <p className="font-display text-[9px] uppercase tracking-[0.3em] text-text-muted">
+      <p className="font-display text-[10px] uppercase tracking-[0.3em] text-text-muted">
         {label}
       </p>
       <motion.p
@@ -143,7 +143,7 @@ function AbilityBlock({
         >
           {total}
           {raceBonus > 0 && (
-            <span className="ml-1 text-[10px] text-accent-muted">
+            <span className="ml-1 text-xs text-accent-muted">
               +{raceBonus}
             </span>
           )}

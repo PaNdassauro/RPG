@@ -37,7 +37,7 @@ export function BackgroundStep() {
                   {profs.map((p) => (
                     <span
                       key={p.index}
-                      className="rounded-sm border border-line bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-text-muted"
+                      className="rounded-sm border border-line bg-surface-elevated px-1.5 py-0.5 font-mono text-xs text-text-muted"
                     >
                       {p.name.replace(/^Skill: /, "")}
                     </span>

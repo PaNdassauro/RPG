@@ -8,6 +8,19 @@ const en = {
     update: "Update",
     delete: "Delete",
     loading: "Loading…",
+    close: "Close",
+  },
+
+  dice: {
+    verdict: {
+      critical: "Critical",
+      success: "Success",
+      fumble: "Fumble",
+      failure: "Failure",
+    },
+    dc: "DC {n}",
+    announce: "Rolled {expression}: {total}.",
+    announceDc: "Rolled {expression}: {total} against DC {dc}. {verdict}.",
   },
 
   title: {
@@ -82,6 +95,8 @@ const en = {
     customModelOption: "Custom model id…",
     customModelPlaceholder: "Model id, e.g. gpt-4.1",
     noKeyNeeded: "No key needed for a local server.",
+    showKey: "Show key",
+    hideKey: "Hide key",
     errors: {
       auth: "{provider} rejected the API key. Check it in Settings.",
       rateLimit: "{provider} is rate-limiting requests. Wait a moment and try again.",
@@ -111,6 +126,8 @@ const en = {
       importButton: "Import JSON",
       exported: "Exported {campaigns} campaign(s), {messages} messages.",
       imported: "Imported {campaigns} campaign(s), {characters} character(s), {messages} messages.",
+      importedSkipped:
+        "Imported {campaigns} campaign(s), {characters} character(s), {messages} messages. Skipped {skipped} invalid record(s).",
       exportFailed: "Export failed.",
       importFailed: "Import failed — file may be malformed.",
     },
@@ -142,6 +159,7 @@ const en = {
     backTitle: "← Title",
     eyebrow: "New Character",
     flavor: "5e Tradition",
+    progress: "Step {n} / {total} · {name}",
     forge: "Forge",
     stepNav: {
       identity: "Identity",
@@ -296,11 +314,28 @@ const en = {
       searchFill: "I search the area for anything of interest.",
     },
     diceButton: "Dice",
+    actionLabel: "Your action",
+    heroTitle: "Hero",
+    worldTitle: "World",
+    moreMenu: "More",
+    sheet: {
+      eyebrow: "Character sheet",
+      level: "Level {n}",
+      tabs: {
+        summary: "Summary",
+        skills: "Skills",
+        attacks: "Attacks",
+        spells: "Spells",
+        gear: "Gear",
+        story: "Story",
+      },
+    },
     actionPlaceholder: 'What do you do? Plain text is action; "quoted text" is speech.  (Cmd/Ctrl+Enter)',
     actionPlaceholderBusy: "The dungeon master is responding…",
     actionPlaceholderCombat: "Your turn — describe what you do. Tap Action or Bonus to spend them, then Finish Turn when you're done.",
     sendTitle: "Send (Cmd/Ctrl+Enter)",
     diceTray: {
+      expressionLabel: "Dice expression",
       title: "Dice Tray",
       hint: "Rolls land in the narration log.",
       rollButton: "Roll",
@@ -318,6 +353,7 @@ const en = {
       noQuests: "The first task has not yet found you.",
     },
     narrationLog: {
+      logLabel: "Narration",
       worldQuiet: "The world is quiet…",
       dmThinking: "The dungeon master considers…",
       jumpButton: "New",
@@ -455,8 +491,8 @@ const en = {
       expertise: " · expertise (+{bonus})",
       success: "Success",
       failure: "Failure",
-      crit: "Critical",
-      fumble: "Fumble",
+      successNat20: "Success (natural 20)",
+      failureNat1: "Failure (natural 1)",
       systemMessage: "{skill} check: {total} vs DC {dc} — {outcome}",
     },
     combat: {

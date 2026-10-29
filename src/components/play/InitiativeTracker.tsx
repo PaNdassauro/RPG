@@ -30,7 +30,7 @@ export function InitiativeTracker() {
         <p className="font-display text-[10px] uppercase tracking-[0.3em] text-danger">
           {t("play.combat.initiativeHeading")}
         </p>
-        <p className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+        <p className="font-mono text-xs uppercase tracking-widest text-text-muted">
           {t("play.combat.round", { n: encounter.round })}
         </p>
       </div>
@@ -91,7 +91,7 @@ export function InitiativeTracker() {
                       {entry.name}
                     </p>
                   </div>
-                  <p className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+                  <p className="shrink-0 font-mono text-xs uppercase tracking-widest text-text-muted">
                     {t("play.combat.initShort", { n: entry.initiative })}
                   </p>
                 </div>
@@ -107,11 +107,11 @@ export function InitiativeTracker() {
                       className="h-full"
                     />
                   </div>
-                  <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-text-muted">
+                  <span className="flex shrink-0 items-center gap-1 font-mono text-xs text-text-muted">
                     <Heart className="h-3 w-3" />
                     {entry.hp.current}/{entry.hp.max}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-text-muted">
+                  <span className="shrink-0 font-mono text-xs text-text-muted">
                     {t("play.combat.acShort", { n: entry.ac })}
                   </span>
                 </div>
@@ -120,7 +120,7 @@ export function InitiativeTracker() {
                     type="button"
                     onClick={() => setRange(entry.id, cycleRange(entry.range))}
                     className={cn(
-                      "mt-1 inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest transition",
+                      "mt-1 inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest transition",
                       entry.range === "close"
                         ? "border-danger/40 bg-danger/10 text-danger"
                         : entry.range === "near"

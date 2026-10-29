@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, X, Zap } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { Sparkles, Zap } from "lucide-react";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/cn";
+import { Dialog, DialogTitle } from "@/components/ui/Dialog";
+import { CloseButton } from "@/components/ui/CloseButton";
 
 interface ClassMeta {
   index: string;
@@ -34,6 +35,7 @@ interface Props {
 
 export function QuickStartModal({ open, onClose, onCreated }: Props) {
   const t = useT();
+  const nameId = useId();
   const [name, setName] = useState("");
   const [classId, setClassId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -75,16 +77,6 @@ export function QuickStartModal({ open, onClose, onCreated }: Props) {
     }
   }, [open]);
 
-  // ESC closes.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !creating) onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose, creating]);
-
   const canStart = name.trim().length > 0 && classId !== null && !creating;
 
   async function start() {
@@ -105,158 +97,138 @@ export function QuickStartModal({ open, onClose, onCreated }: Props) {
   }
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="qs-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-sm"
+    <Dialog open={open} onClose={onClose} dismissible={!creating} className="max-w-2xl">
+      <header className="flex items-start justify-between border-b border-line/60 bg-canvas/40 px-6 py-5">
+        <div>
+          <p className="flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
+            <Zap className="h-3 w-3" />
+            {t("quickStart.eyebrow")}
+          </p>
+          <DialogTitle className="mt-0.5 font-display text-2xl text-text">
+            {t("quickStart.title")}
+          </DialogTitle>
+          <p className="mt-1 max-w-prose text-xs leading-relaxed text-text-muted">
+            {t("quickStart.intro")}
+          </p>
+        </div>
+        <CloseButton onClick={onClose} disabled={creating} />
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <Section title={t("quickStart.nameLabel")} htmlFor={nameId}>
+          <input
+            id={nameId}
+            type="text"
+            data-autofocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canStart) start();
+            }}
+            placeholder={t("quickStart.namePlaceholder")}
+            maxLength={60}
+            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-base text-text placeholder:text-text-muted/60 focus:border-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
+          />
+        </Section>
+
+        <Section title={t("quickStart.classLabel")}>
+          {!classes ? (
+            <p className="py-4 text-center text-xs text-text-muted/80">
+              {t("common.loading")}
+            </p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {classes.map((k) => {
+                const selected = classId === k.index;
+                return (
+                  <li key={k.index}>
+                    <button
+                      type="button"
+                      onClick={() => setClassId(k.index)}
+                      className={cn(
+                        "flex w-full flex-col items-start gap-1 rounded-md border px-3 py-2.5 text-left transition",
+                        selected
+                          ? "border-accent bg-accent/15"
+                          : "border-line bg-surface hover:border-accent-muted/60",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "font-display text-sm",
+                          selected ? "text-accent" : "text-text",
+                        )}
+                      >
+                        {k.name}
+                      </span>
+                      <span className="font-mono text-xs uppercase tracking-widest text-text-muted">
+                        d{k.hit_die} · {k.savingThrows.join(" / ")}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Section>
+
+        <p className="text-xs leading-relaxed text-text-muted/80">
+          {t("quickStart.defaultsHint")}
+        </p>
+
+        {error && (
+          <p className="mt-3 text-xs text-danger">{error}</p>
+        )}
+      </div>
+
+      <footer className="flex items-center justify-between border-t border-line/60 bg-canvas/30 px-6 py-3.5">
+        <button
+          type="button"
           onClick={() => !creating && onClose()}
+          disabled={creating}
+          className="font-display text-xs uppercase tracking-[0.3em] text-text-muted transition hover:text-text disabled:opacity-50"
         >
-          <motion.div
-            key="qs-card"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.25, ease: [0.2, 0.8, 0.4, 1] }}
-            onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-accent/40 bg-surface shadow-[0_0_80px_-20px_rgba(212,170,71,0.4)]"
-          >
-            <header className="flex items-start justify-between border-b border-line/60 bg-canvas/40 px-6 py-5">
-              <div>
-                <p className="flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
-                  <Zap className="h-3 w-3" />
-                  {t("quickStart.eyebrow")}
-                </p>
-                <h2 className="mt-0.5 font-display text-2xl text-text">
-                  {t("quickStart.title")}
-                </h2>
-                <p className="mt-1 max-w-prose text-xs leading-relaxed text-text-muted">
-                  {t("quickStart.intro")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => !creating && onClose()}
-                disabled={creating}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text disabled:opacity-50"
-                aria-label={t("common.cancel")}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </header>
-
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <Section title={t("quickStart.nameLabel")}>
-                <input
-                  type="text"
-                  autoFocus
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && canStart) start();
-                  }}
-                  placeholder={t("quickStart.namePlaceholder")}
-                  maxLength={60}
-                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-base text-text placeholder:text-text-muted/40 focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
-                />
-              </Section>
-
-              <Section title={t("quickStart.classLabel")}>
-                {!classes ? (
-                  <p className="py-4 text-center text-xs text-text-muted/60">
-                    {t("common.loading")}
-                  </p>
-                ) : (
-                  <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {classes.map((k) => {
-                      const selected = classId === k.index;
-                      return (
-                        <li key={k.index}>
-                          <button
-                            type="button"
-                            onClick={() => setClassId(k.index)}
-                            className={cn(
-                              "flex w-full flex-col items-start gap-1 rounded-md border px-3 py-2.5 text-left transition",
-                              selected
-                                ? "border-accent bg-accent/15"
-                                : "border-line bg-surface hover:border-accent-muted/60",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "font-display text-sm",
-                                selected ? "text-accent" : "text-text",
-                              )}
-                            >
-                              {k.name}
-                            </span>
-                            <span className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
-                              d{k.hit_die} · {k.savingThrows.join(" / ")}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </Section>
-
-              <p className="text-[11px] leading-relaxed text-text-muted/70">
-                {t("quickStart.defaultsHint")}
-              </p>
-
-              {error && (
-                <p className="mt-3 text-xs text-danger">{error}</p>
-              )}
-            </div>
-
-            <footer className="flex items-center justify-between border-t border-line/60 bg-canvas/30 px-6 py-3.5">
-              <button
-                type="button"
-                onClick={() => !creating && onClose()}
-                disabled={creating}
-                className="font-display text-xs uppercase tracking-[0.3em] text-text-muted transition hover:text-text disabled:opacity-50"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={start}
-                disabled={!canStart}
-                className={cn(
-                  "flex items-center gap-2 rounded-md border px-5 py-2 font-display text-xs uppercase tracking-[0.3em] transition",
-                  canStart
-                    ? "border-accent bg-accent/15 text-accent hover:bg-accent/25"
-                    : "border-line bg-surface text-text-muted/40",
-                )}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {creating ? t("quickStart.creating") : t("quickStart.startButton")}
-              </button>
-            </footer>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          {t("common.cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={start}
+          disabled={!canStart}
+          className={cn(
+            "flex items-center gap-2 rounded-md border px-5 py-2 font-display text-xs uppercase tracking-[0.3em] transition",
+            canStart
+              ? "border-accent bg-accent/15 text-accent hover:bg-accent/25"
+              : "border-line bg-surface text-text-muted/60",
+          )}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {creating ? t("quickStart.creating") : t("quickStart.startButton")}
+        </button>
+      </footer>
+    </Dialog>
   );
 }
 
 function Section({
   title,
+  htmlFor,
   children,
 }: {
   title: string;
+  /** When set, the title is a <label> for the input with this id. */
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
+  const titleClass =
+    "mb-2 block font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted";
   return (
     <section className="mb-5 last:mb-3">
-      <p className="mb-2 font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
-        {title}
-      </p>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={titleClass}>
+          {title}
+        </label>
+      ) : (
+        <p className={titleClass}>{title}</p>
+      )}
       {children}
     </section>
   );

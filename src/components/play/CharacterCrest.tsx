@@ -122,7 +122,7 @@ export function CharacterCrest() {
 
       {level < 20 && (
         <section>
-          <div className="mb-1 flex items-center justify-between font-mono text-[10px] text-text-muted">
+          <div className="mb-1 flex items-center justify-between font-mono text-xs text-text-muted">
             <span>{t("play.crest.xp")}</span>
             <span className="text-text">
               {character.xp.toLocaleString()} ·{" "}
@@ -131,12 +131,21 @@ export function CharacterCrest() {
               </span>
             </span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full border border-line bg-surface">
+          <div
+            role="progressbar"
+            aria-label={t("play.crest.xp")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(xpProgress * 100)}
+            className="h-1.5 overflow-hidden rounded-full border border-line bg-surface"
+          >
+            {/* scaleX instead of width: transform-only, no layout per frame. */}
             <motion.div
               initial={false}
-              animate={{ width: `${xpProgress * 100}%` }}
+              animate={{ scaleX: xpProgress }}
+              style={{ transformOrigin: "left" }}
               transition={{ duration: 0.4, ease: "easeOut" }}
-              className="h-full bg-accent-muted"
+              className="h-full w-full bg-accent-muted"
             />
           </div>
         </section>
@@ -158,12 +167,20 @@ export function CharacterCrest() {
             )}
           </motion.span>
         </div>
-        <div className="relative h-2 overflow-hidden rounded-full border border-line bg-surface">
+        <div
+          role="progressbar"
+          aria-label={t("play.crest.hp")}
+          aria-valuemin={0}
+          aria-valuemax={hp.max}
+          aria-valuenow={hp.current}
+          className="relative h-2 overflow-hidden rounded-full border border-line bg-surface"
+        >
           <motion.div
             initial={false}
-            animate={{ width: `${hpPct * 100}%`, backgroundColor: hpColor }}
+            animate={{ scaleX: hpPct, backgroundColor: hpColor }}
+            style={{ transformOrigin: "left" }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="h-full"
+            className="h-full w-full"
           />
           <AnimatePresence>
             {lastFx && (
@@ -245,7 +262,7 @@ export function CharacterCrest() {
               return (
                 <span
                   key={c}
-                  className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-0.5 font-mono text-[10px] text-danger"
+                  className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-0.5 font-mono text-xs text-danger"
                   title={timer?.source}
                 >
                   {c}
@@ -272,7 +289,7 @@ export function CharacterCrest() {
               : t("play.crest.encumbered");
         return (
           <div
-            className="flex items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 font-mono text-[10px] text-danger"
+            className="flex items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 font-mono text-xs text-danger"
             title={label}
           >
             <span className="truncate">{label}</span>
@@ -283,7 +300,7 @@ export function CharacterCrest() {
       <div className="flex flex-wrap items-center gap-2">
         {sc && (
           <span
-            className="rounded-sm border border-accent-muted/40 bg-accent/5 px-2 py-0.5 font-mono text-[10px] text-accent-muted"
+            className="rounded-sm border border-accent-muted/40 bg-accent/5 px-2 py-0.5 font-mono text-xs text-accent-muted"
             title={t("play.crest.spellDcHint")}
           >
             {t("play.crest.spellDc", { dc: sc.saveDc })} ·{" "}
@@ -296,10 +313,10 @@ export function CharacterCrest() {
           type="button"
           onClick={() => character.inspiration && spendInspiration()}
           disabled={!character.inspiration}
-          className={`flex items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest transition ${
+          className={`flex items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-xs uppercase tracking-widest transition ${
             character.inspiration
               ? "border-accent bg-accent/15 text-accent hover:bg-accent/25"
-              : "border-line bg-surface text-text-muted/50"
+              : "border-line bg-surface text-text-muted/60"
           }`}
           title={
             character.inspiration
@@ -329,10 +346,11 @@ export function CharacterCrest() {
             <button
               type="button"
               onClick={() => endConcentration()}
-              className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-text-muted transition hover:border-danger/50 hover:text-danger"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition-colors duration-150 ease-out hover:border-danger/50 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-[0.97]"
               title={t("play.crest.endConcentration")}
+              aria-label={t("play.crest.endConcentration")}
             >
-              <X className="h-3 w-3" />
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         </section>
@@ -390,7 +408,7 @@ function FloatingNumber({
 function Stat({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
     <div className="rounded-md border border-line/60 bg-surface px-2 py-1.5 text-center">
-      <p className="font-display text-[9px] uppercase tracking-[0.3em] text-text-muted">
+      <p className="font-display text-[10px] uppercase tracking-[0.3em] text-text-muted">
         {label}
       </p>
       <p
