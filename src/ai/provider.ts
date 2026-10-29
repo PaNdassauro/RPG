@@ -20,7 +20,7 @@ export type StreamEvent =
   | { kind: "text"; delta: string }
   | { kind: "tool_call"; id: string; name: string; argsJSON: string }
   | { kind: "error"; message: string }
-  | { kind: "done"; reason: "stop" | "tool_calls" | "length" | "error" };
+  | { kind: "done"; reason: "stop" | "tool_calls" | "length" | "error" | "refusal" | "aborted" };
 
 export interface CompletionArgs {
   system: string;

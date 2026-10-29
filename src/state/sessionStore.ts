@@ -22,6 +22,12 @@ import type {
   SkillName,
 } from "@/schemas/character";
 import { CharacterSchema, abilityModifier } from "@/schemas/character";
+import { resolveTravelHunger } from "@/engine/hunger";
+import {
+  CLEAR_DEATH_SAVES,
+  damageWhileAtZero,
+  resolveDeathSaveDelta,
+} from "@/engine/deathSave";
 import { averageHitDieGain, featuresForClassLevel } from "@/state/sheetDerived";
 import { getClass } from "@/data/srd";
 import {
@@ -41,6 +47,10 @@ import { concentrationSaveDc, scaleDamageByType } from "@/engine/combat";
 import {
   addConditionTimer as engineAddConditionTimer,
   decrementConditionTimers as engineDecrementConditionTimers,
+  effectiveHpMax,
+  exhaustionLevel,
+  settleTimersAtCombatEnd,
+  withExhaustionLevel,
 } from "@/engine/conditions";
 import type { Condition } from "@/schemas/character";
 import {
@@ -156,6 +166,25 @@ export interface HpDeltaFx {
   ts: number;
 }
 
+/**
+ * Handle for the one DM turn allowed in flight. Callers never build their own
+ * AbortController: `beginTurn` aborts the previous turn and hands out a fresh
+ * signal, and `reset()` / `loadCampaign()` abort it too.
+ */
+export interface TurnHandle {
+  id: number;
+  /** Campaign the turn started in; its output is dropped if this changes. */
+  campaignId: string;
+  signal: AbortSignal;
+}
+
+export interface FinalizeDraftOptions {
+  /** Persist only while this campaign is still the loaded one. */
+  campaignId?: string;
+  /** Rewrite the draft before it is persisted (e.g. strip a cut-off block). */
+  sanitize?: (draft: string) => string;
+}
+
 interface SessionState {
   campaignId: string | null;
   campaign: Campaign | null;
@@ -173,6 +202,12 @@ interface SessionState {
   thinking: boolean;
   /** True while text is actively streaming. */
   streaming: boolean;
+  /**
+   * True from `beginTurn` until `runDmTurn` fully finishes — stream AND the
+   * markup side effects (monster lazy-load, shop, level-up…). `streaming`
+   * flips off earlier, so gate turn submission on this instead.
+   */
+  busy: boolean;
   /** Surface for transient errors (e.g., provider failed). */
   error: string | null;
   /** Outstanding skill check the player must roll before the DM continues. */
@@ -183,6 +218,8 @@ interface SessionState {
   pendingReaction: PendingReaction | null;
   /** Outstanding concentration save (damage-driven). */
   pendingConcentration: PendingConcentrationSave | null;
+  /** Damage amounts from further hits that still owe their own CON save. */
+  concentrationQueue: number[];
   /** Active death-save loop — player rolls until 3 successes or 3 failures. */
   pendingDying: PendingDying | null;
   /** Set after 3 death-save failures — overlay until they choose end or twist. */
@@ -208,9 +245,19 @@ interface SessionState {
     roll: DiceRollRecord,
   ) => Promise<void>;
   setThinking: (thinking: boolean) => void;
+  /** Start a DM turn: aborts the previous one and returns the new handle (null without a campaign). */
+  beginTurn: () => TurnHandle | null;
+  /** True while `id` is the live turn, in the campaign it started in, not aborted. */
+  isTurnCurrent: (id: number) => boolean;
+  /** Finish a turn. A superseded turn is a no-op so it can't clear its successor's flags. */
+  endTurn: (id: number) => void;
+  /** Abort whatever turn is in flight (navigation, campaign switch). */
+  abortTurn: () => void;
   beginDraft: () => void;
   appendDraft: (delta: string) => void;
-  finalizeDraft: () => Promise<ChatMessage | null>;
+  /** Throw the streamed text away without persisting (aborted / failed stream). */
+  discardDraft: () => void;
+  finalizeDraft: (opts?: FinalizeDraftOptions) => Promise<ChatMessage | null>;
   setError: (error: string | null) => void;
   setPendingCheck: (check: PendingCheck | null) => void;
   setPendingSave: (save: PendingSave | null) => void;
@@ -334,7 +381,17 @@ interface SessionState {
   /** Replace the rolling summary and stamp how many turns it covers. */
   updateRollingSummary: (summary: string, throughTurn: number) => Promise<void>;
 
-  applyHpChange: (next: Character["hp"], fx: Omit<HpDeltaFx, "id" | "ts">) => Promise<void>;
+  /**
+   * Write the player's new HP. Also drives the dying loop: healing from 0
+   * clears it, damage while at 0 adds a failed death save (`opts.crit` = 2).
+   * For damage at 0 HP pass the damage dealt as `fx.amount` — `next` can't
+   * show it since HP is already 0.
+   */
+  applyHpChange: (
+    next: Character["hp"],
+    fx: Omit<HpDeltaFx, "id" | "ts">,
+    opts?: { crit?: boolean },
+  ) => Promise<void>;
   consumeHpFx: (id: string) => void;
   startEncounter: (entries: InitiativeEntry[]) => Promise<void>;
   endEncounter: () => Promise<void>;
@@ -355,11 +412,13 @@ const initial = {
   draftDm: "",
   thinking: false,
   streaming: false,
+  busy: false,
   error: null,
   pendingCheck: null,
   pendingSave: null,
   pendingReaction: null,
   pendingConcentration: null,
+  concentrationQueue: [],
   pendingDying: null,
   pendingDeath: null,
   pendingLevelUp: null,
@@ -368,10 +427,36 @@ const initial = {
   shop: null,
 };
 
+interface LiveTurn {
+  id: number;
+  campaignId: string;
+  controller: AbortController;
+}
+let liveTurn: LiveTurn | null = null;
+let turnSeq = 0;
+
+function newPendingId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** True when a heal takes the player off 0 HP (ends the dying loop). */
+function healedFromZero(before: Character, nextCurrent: number): boolean {
+  return before.hp.current === 0 && nextCurrent > 0;
+}
+
+/** Combat is over: round-based condition timers have nothing left to count. */
+function settleCombatTimers(character: Character): Character {
+  if (character.conditionTimers.length === 0) return character;
+  const { conditions, conditionTimers } = settleTimersAtCombatEnd(character);
+  return { ...character, conditions, conditionTimers, updatedAt: Date.now() };
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   ...initial,
 
   async loadCampaign(campaignId: string) {
+    // A turn streaming for the previous campaign must not write into this one.
+    get().abortTurn();
     set({ ...initial, campaignId });
     const campaign = await db.campaigns.get(campaignId);
     if (!campaign) {
@@ -394,6 +479,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       if (changed) {
         await db.characters.put(character);
       }
+    } else {
+      // Keep playing with the stored record (better than locking the player
+      // out), but say loudly that it is unvalidated so a later crash is traceable.
+      console.error(
+        `[sessionStore] character ${rawCharacter.id} failed schema validation; loading it unvalidated`,
+        parsed.error.issues,
+      );
     }
     // Reconcile per-rest usage counters with the character's class
     // progression. Backfills counters for legacy saves and tops up after
@@ -442,14 +534,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     ]);
     const pendingCheck = (savedCheck?.value as PendingCheck | null | undefined) ?? null;
     const pendingSave = (savedSave?.value as PendingSave | null | undefined) ?? null;
+    // Resume the dying loop after a reload: at 0 HP and not stabilized the
+    // death saves go on; three failures (or exhaustion 6) means dead.
+    // (`?.`/`??`: a record that failed validation above may lack these fields.)
+    const dead =
+      (character.deathSaves?.failures ?? 0) >= 3 ||
+      exhaustionLevel(character.conditions ?? []) >= 6;
+    const dying = !dead && character.hp.current === 0 && !character.deathSaves?.stable;
+    const closed = !!campaign.endedAt;
+    // A newer loadCampaign (or reset) took over while we were reading.
+    if (get().campaignId !== campaignId) return;
     set({
       campaign,
       character,
       messages,
       diceRolls,
-      encounter: activeEncounter,
-      pendingCheck,
-      pendingSave,
+      encounter: dying || dead ? null : activeEncounter,
+      pendingCheck: dying || dead ? null : pendingCheck,
+      pendingSave: dying || dead ? null : pendingSave,
+      pendingDeath: dead && !closed ? { id: newPendingId("death") } : null,
+      pendingDying: dying && !closed ? { id: newPendingId("dying") } : null,
     });
   },
 
@@ -481,10 +585,48 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((s) => ({ draftDm: s.draftDm + delta, streaming: true, thinking: false }));
   },
 
-  async finalizeDraft() {
-    const { draftDm, campaignId, messages } = get();
+  beginTurn() {
+    const { campaignId } = get();
+    if (!campaignId) return null;
+    liveTurn?.controller.abort();
+    const turn: LiveTurn = { id: ++turnSeq, campaignId, controller: new AbortController() };
+    liveTurn = turn;
+    // Whatever the superseded turn left on screen is abandoned with it.
+    set({ busy: true, draftDm: "", streaming: false });
+    return { id: turn.id, campaignId, signal: turn.controller.signal };
+  },
+
+  isTurnCurrent(id) {
+    return (
+      liveTurn?.id === id &&
+      liveTurn.campaignId === get().campaignId &&
+      !liveTurn.controller.signal.aborted
+    );
+  },
+
+  endTurn(id) {
+    if (liveTurn?.id !== id) return;
+    liveTurn = null;
+    set({ busy: false, thinking: false, streaming: false });
+  },
+
+  abortTurn() {
+    liveTurn?.controller.abort();
+    liveTurn = null;
+    set({ busy: false, thinking: false, streaming: false, draftDm: "" });
+  },
+
+  discardDraft() {
+    set({ draftDm: "", streaming: false });
+  },
+
+  async finalizeDraft(opts) {
+    const { draftDm, campaignId } = get();
     set({ streaming: false });
-    if (!campaignId || draftDm.trim().length === 0) {
+    // The loaded campaign changed under the caller: never write to the new one.
+    if (!campaignId || (opts?.campaignId && opts.campaignId !== campaignId)) return null;
+    const content = opts?.sanitize ? opts.sanitize(draftDm) : draftDm;
+    if (content.trim().length === 0) {
       set({ draftDm: "" });
       return null;
     }
@@ -494,13 +636,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       id,
       campaignId,
       role: "dm",
-      content: draftDm,
+      content,
       toolCallIds: [],
       diceRollIds: [],
       ts,
     };
+    set({ draftDm: "" });
     await db.messages.put(final);
-    set({ draftDm: "", messages: [...messages, final] });
+    // The write is saved against the campaign it belongs to; only mirror it
+    // into the visible log while that campaign is still the loaded one.
+    if (get().campaignId === campaignId) {
+      set((s) => ({ messages: [...s.messages, final] }));
+    }
     return final;
   },
 
@@ -537,30 +684,48 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async requestConcentrationSave(damageTaken) {
-    const { character, campaignId } = get();
+    const { character, campaignId, pendingConcentration } = get();
     if (!character || !campaignId || !character.concentration) return;
-    const dc = concentrationSaveDc(damageTaken);
+    // 5e RAW: one CON save per damage instance. Another hit while a save card
+    // is open waits its turn instead of overwriting the card.
+    if (pendingConcentration) {
+      set((s) => ({ concentrationQueue: [...s.concentrationQueue, damageTaken] }));
+      return;
+    }
     set({
       pendingConcentration: {
         id: `con_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         spellName: character.concentration.spellName,
-        dc,
+        dc: concentrationSaveDc(damageTaken),
         damageTaken,
       },
     });
   },
 
   async resolveConcentrationSave(rolledTotal) {
-    const { character, pendingConcentration, campaignId } = get();
+    const { character, pendingConcentration, campaignId, concentrationQueue } = get();
     if (!character || !campaignId || !pendingConcentration) return;
     const passed = rolledTotal >= pendingConcentration.dc;
     if (passed) {
-      set({ pendingConcentration: null });
+      const [next, ...rest] = concentrationQueue;
+      set({
+        pendingConcentration:
+          next === undefined
+            ? null
+            : {
+                id: `con_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                spellName: pendingConcentration.spellName,
+                dc: concentrationSaveDc(next),
+                damageTaken: next,
+              },
+        concentrationQueue: rest,
+      });
       return;
     }
+    // Failed: the spell is gone, so any queued saves are moot.
     const updated = endConcentration(character);
     await db.characters.put(updated);
-    set({ character: updated, pendingConcentration: null });
+    set({ character: updated, pendingConcentration: null, concentrationQueue: [] });
   },
 
   async beginConcentration({ spellName, srdRef }) {
@@ -579,7 +744,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!character || !character.concentration) return;
     const updated = endConcentration(character);
     await db.characters.put(updated);
-    set({ character: updated });
+    set({ character: updated, pendingConcentration: null, concentrationQueue: [] });
   },
 
   async adjustNpcDisposition({ npc, delta }) {
@@ -768,61 +933,37 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ pendingDying });
   },
 
-  async applyDeathSaveDelta({ successes, failures, recovered }) {
+  async applyDeathSaveDelta(delta) {
     const { character } = get();
     if (!character) return;
-    const cur = character.deathSaves ?? { successes: 0, failures: 0 };
-    const newPips = {
-      successes: Math.min(3, cur.successes + successes),
-      failures: Math.min(3, cur.failures + failures),
-    };
-    let updated: Character = { ...character, deathSaves: newPips, updatedAt: Date.now() };
-    // Recovered (nat 20) wakes at 1 HP and clears pips.
-    if (recovered) {
-      updated = {
-        ...updated,
-        hp: { ...updated.hp, current: 1 },
-        deathSaves: { successes: 0, failures: 0 },
-      };
+    const { deathSaves, status } = resolveDeathSaveDelta(
+      character.deathSaves ?? CLEAR_DEATH_SAVES,
+      delta,
+    );
+    let updated: Character = { ...character, deathSaves, updatedAt: Date.now() };
+    // Recovered (nat 20) wakes at 1 HP.
+    if (status === "recovered") {
+      updated = { ...updated, hp: { ...updated.hp, current: 1 } };
     }
     await db.characters.put(updated);
-    if (recovered) {
+    if (status === "recovered") {
       const fxRecord: HpDeltaFx = {
         id: `fx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         ts: Date.now(),
         kind: "heal",
         amount: 1,
       };
-      set((s) => ({
-        character: updated,
-        hpFx: [...s.hpFx, fxRecord],
-        pendingDying: null,
-      }));
-      return;
-    }
-    if (newPips.failures >= 3) {
+      set((s) => ({ character: updated, hpFx: [...s.hpFx, fxRecord], pendingDying: null }));
+    } else if (status === "dead") {
       // Dead — transition to the end/twist overlay.
-      set({
-        character: updated,
-        pendingDying: null,
-        pendingDeath: {
-          id: `death_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        },
-      });
-      return;
+      set({ character: updated, pendingDying: null, pendingDeath: { id: newPendingId("death") } });
+    } else if (status === "stable") {
+      // Stabilized — clear dying state but keep 0 HP (`deathSaves.stable`
+      // survives a reload). A heal or long rest wakes the player.
+      set({ character: updated, pendingDying: null });
+    } else {
+      set({ character: updated });
     }
-    if (newPips.successes >= 3) {
-      // Stabilized — clear dying state but keep 0 HP. Player needs a heal or
-      // long rest to wake. Pips get cleared so a future fall starts fresh.
-      const stable: Character = {
-        ...updated,
-        deathSaves: { successes: 0, failures: 0 },
-      };
-      await db.characters.put(stable);
-      set({ character: stable, pendingDying: null });
-      return;
-    }
-    set({ character: updated });
   },
 
   async clearDeathSaves() {
@@ -841,8 +982,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const { character } = get();
     if (!character) return;
     // Guard: don't open during active combat — the DM prompt forbids it but
-    // safety nets are cheap. Also guard during pendingDeath.
-    if (get().encounter || get().pendingDeath) return;
+    // safety nets are cheap. Also guard while dying or dead.
+    if (get().encounter || get().pendingDying || get().pendingDeath) return;
     // Guard: max level 20 across all classes.
     const totalLvl = character.classes.reduce((sum, c) => sum + c.level, 0);
     if (totalLvl >= 20) return;
@@ -894,11 +1035,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
 
-    // HP gain = average of class hit die + CON mod.
+    // HP gain = average of class hit die + CON mod (+2 with Tough, which
+    // keeps paying on every later level).
     const conMod = abilityModifier(abilities.con);
-    const gain = Math.max(1, averageHitDieGain(klass.hit_die, conMod));
-    const newHpMax = character.hp.max + gain;
-    const newHpCurrent = Math.min(newHpMax, character.hp.current + gain);
+    const toughBonus = character.feats.some((f) => f.featId === "tough") ? 2 : 0;
+    const gain = Math.max(1, averageHitDieGain(klass.hit_die, conMod)) + toughBonus;
+    // RAW: when the CON modifier rises, the HP maximum rises by that much for
+    // every level already attained (this level's gain above uses the new mod).
+    const levelsBefore = character.classes.reduce((sum, c) => sum + c.level, 0);
+    const retroactive =
+      (conMod - abilityModifier(character.abilities.con)) * levelsBefore;
+    const newHpMax = character.hp.max + gain + retroactive;
+    const newHpCurrent = Math.min(
+      newHpMax,
+      Math.max(0, character.hp.current + gain + retroactive),
+    );
 
     // Update hit dice array.
     const hitDice: HitDieEntry[] = [...character.hitDice];
@@ -1011,6 +1162,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       character: next,
       hpFx: fxRecord ? [...s.hpFx, fxRecord] : s.hpFx,
       pendingDying: null,
+      pendingConcentration: null,
+      concentrationQueue: [],
     }));
     // A long rest spans a night — roll the in-world calendar forward a day.
     await get().advanceDay(1);
@@ -1033,14 +1186,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!character) return null;
     const out = spendHitDie(character, classId);
     if (!out) return null;
-    await db.characters.put(out.next);
+    const woke = healedFromZero(character, out.next.hp.current);
+    const healed: Character = woke
+      ? { ...out.next, deathSaves: { ...CLEAR_DEATH_SAVES } }
+      : out.next;
+    await db.characters.put(healed);
     const fxRecord: HpDeltaFx = {
       id: `fx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ts: Date.now(),
       kind: "heal",
       amount: out.roll.healed,
     };
-    set((s) => ({ character: out.next, hpFx: [...s.hpFx, fxRecord] }));
+    set((s) => ({
+      character: healed,
+      hpFx: [...s.hpFx, fxRecord],
+      ...(woke ? { pendingDying: null } : {}),
+    }));
     return { healed: out.roll.healed, rolled: out.roll.rolled, die: out.roll.die };
   },
 
@@ -1097,7 +1258,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       { dice: "2d4+2", label: item.name };
     const result = rollExpression(recipe.dice);
     const healed = Math.min(
-      character.hp.max - character.hp.current,
+      Math.max(0, effectiveHpMax(character.hp.max, character.conditions) - character.hp.current),
       Math.max(0, result.total),
     );
     const newQty = item.qty - 1;
@@ -1107,9 +1268,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         : character.inventory.map((i) =>
             i.id === itemId ? { ...i, qty: newQty } : i,
           );
+    const woke = healedFromZero(character, character.hp.current + healed);
     const next: Character = {
       ...character,
       hp: { ...character.hp, current: character.hp.current + healed },
+      ...(woke ? { deathSaves: { ...CLEAR_DEATH_SAVES } } : {}),
       inventory,
       updatedAt: Date.now(),
     };
@@ -1120,7 +1283,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       kind: "heal",
       amount: healed,
     };
-    set((s) => ({ character: next, hpFx: [...s.hpFx, fxRecord] }));
+    set((s) => ({
+      character: next,
+      hpFx: [...s.hpFx, fxRecord],
+      ...(woke ? { pendingDying: null } : {}),
+    }));
     return { healed };
   },
 
@@ -1152,6 +1319,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const ab = feat.choice as Ability;
       abilities[ab] = Math.min(20, abilities[ab] + 1);
     }
+    // Resilient (CON) can lift the modifier: +1 max HP per level attained.
+    hpBonus +=
+      (abilityModifier(abilities.con) - abilityModifier(character.abilities.con)) *
+      character.classes.reduce((s, c) => s + c.level, 0);
     const newMax = character.hp.max + hpBonus;
     const next: Character = {
       ...character,
@@ -1326,44 +1497,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     void destination;
     const { character } = get();
     if (!character) return { rationsConsumed: 0, daysHungry: 0 };
-    const rationsBefore = character.rations ?? 0;
-    const consumed = Math.min(rationsBefore, days);
-    const hungry = days - consumed;
-    const rationsAfter = rationsBefore - consumed;
-    const daysWithoutFood = (character.daysWithoutFood ?? 0) + hungry;
-    // 5e RAW: 3+ con-mod days hungry → 1 exhaustion level per day after.
-    const conMod = abilityModifier(character.abilities.con);
-    const hungerThreshold = Math.max(1, 3 + conMod);
-    let conditions = [...character.conditions];
-    if (daysWithoutFood > hungerThreshold) {
-      const overshoot = daysWithoutFood - hungerThreshold;
-      const exLevels: Character["conditions"] = [
-        "exhaustion1",
-        "exhaustion2",
-        "exhaustion3",
-        "exhaustion4",
-        "exhaustion5",
-        "exhaustion6",
-      ];
-      const current = conditions.filter((c) => exLevels.includes(c));
-      const curLevel = current.length
-        ? Math.max(...current.map((c) => exLevels.indexOf(c) + 1))
-        : 0;
-      const newLevel = Math.min(6, curLevel + overshoot);
-      conditions = [...conditions.filter((c) => !exLevels.includes(c))];
-      if (newLevel > 0) conditions.push(exLevels[newLevel - 1]!);
-    }
+    const hunger = resolveTravelHunger({
+      rationsBefore: character.rations ?? 0,
+      days,
+      daysWithoutFood: character.daysWithoutFood ?? 0,
+      conMod: abilityModifier(character.abilities.con),
+      exhaustionLevel: exhaustionLevel(character.conditions),
+    });
+    const conditions = withExhaustionLevel(character.conditions, hunger.exhaustionLevel);
+    // Exhaustion 4 halves the HP maximum: current HP can't stay above it.
+    const hpCap = effectiveHpMax(character.hp.max, conditions);
     const next: Character = {
       ...character,
-      rations: rationsAfter,
-      daysWithoutFood: hungry > 0 ? daysWithoutFood : 0,
+      rations: hunger.rationsAfter,
+      daysWithoutFood: hunger.daysWithoutFood,
       conditions,
+      hp: { ...character.hp, current: Math.min(character.hp.current, hpCap) },
       updatedAt: Date.now(),
     };
     await db.characters.put(next);
     set({ character: next });
+    // Exhaustion 6 is death: hand over to the end/twist overlay.
+    if (hunger.exhaustionLevel >= 6 && !get().pendingDeath && !get().campaign?.endedAt) {
+      set({ pendingDying: null, pendingDeath: { id: newPendingId("death") } });
+    }
     await get().advanceDay(days);
-    return { rationsConsumed: consumed, daysHungry: hungry };
+    return { rationsConsumed: hunger.rationsConsumed, daysHungry: hunger.daysHungry };
   },
 
   async setRations(nextValue) {
@@ -1386,14 +1545,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   async reviveToHalf() {
     const { character } = get();
     if (!character) return;
-    const restored = Math.max(1, Math.floor(character.hp.max / 2));
+    const restored = Math.max(
+      1,
+      Math.floor(effectiveHpMax(character.hp.max, character.conditions) / 2),
+    );
     const delta = restored - character.hp.current;
     const newHp: Character["hp"] = {
       max: character.hp.max,
       current: restored,
       temp: 0,
     };
-    const updated: Character = { ...character, hp: newHp, updatedAt: Date.now() };
+    // The twist undoes the death: fresh pips, and exhaustion 6 (the other way
+    // to die) steps back to 5 so the next load doesn't kill the player again.
+    const updated: Character = {
+      ...character,
+      hp: newHp,
+      deathSaves: { ...CLEAR_DEATH_SAVES },
+      conditions: withExhaustionLevel(
+        character.conditions,
+        Math.min(5, exhaustionLevel(character.conditions)),
+      ),
+      updatedAt: Date.now(),
+    };
     await db.characters.put(updated);
     const fxRecord: HpDeltaFx = {
       id: `fx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1405,6 +1578,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       character: updated,
       hpFx: [...s.hpFx, fxRecord],
       pendingDeath: null,
+      pendingDying: null,
     }));
   },
 
@@ -1536,29 +1710,61 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }));
   },
 
-  async applyHpChange(next, fx) {
+  async applyHpChange(next, fx, opts) {
     const state = get();
     const character = state.character;
     if (!character) return;
+    // A dead character (3 failed saves, awaiting end/twist) isn't healed by
+    // narration — the twist of fate is the way back.
+    if (state.pendingDeath && next.current > 0) return;
     const wasAlive = character.hp.current > 0;
     const droppingToZero = next.current === 0 && wasAlive;
+    const wokeUp = healedFromZero(character, next.current);
+    // Damage at 0 HP can't lower HP further — `fx.amount` carries it instead.
+    const hitAtZero = !wasAlive && next.current === 0 && fx.kind === "damage" && fx.amount > 0;
     // 5e RAW: concentration auto-breaks at 0 HP. Drop it immediately so the
     // sheet/narration reflect reality before the dying loop opens.
     const concentration =
       droppingToZero && character.concentration ? null : character.concentration;
-    const updated: Character = {
+    let deathSaves = character.deathSaves ?? CLEAR_DEATH_SAVES;
+    let dead = false;
+    if (droppingToZero || wokeUp) {
+      deathSaves = { ...CLEAR_DEATH_SAVES };
+    } else if (hitAtZero) {
+      const r = damageWhileAtZero(deathSaves, opts?.crit ?? false);
+      deathSaves = r.deathSaves;
+      dead = r.status === "dead";
+    }
+    let updated: Character = {
       ...character,
       hp: next,
       concentration,
+      deathSaves,
       updatedAt: Date.now(),
     };
+    if (droppingToZero && state.encounter) updated = settleCombatTimers(updated);
     await db.characters.put(updated);
     const fxRecord: HpDeltaFx = {
       id: `fx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ts: Date.now(),
       ...fx,
     };
-    set((s) => ({ character: updated, hpFx: [...s.hpFx, fxRecord] }));
+    set((s) => ({
+      character: updated,
+      hpFx: [...s.hpFx, fxRecord],
+      ...(wokeUp ? { pendingDying: null } : {}),
+    }));
+
+    if (hitAtZero) {
+      // Already down: the hit costs a death save (two on a crit). A stabilized
+      // character starts dying again; three failures is death.
+      if (dead) {
+        set({ pendingDying: null, pendingDeath: { id: newPendingId("death") } });
+      } else if (!get().pendingDying && !get().pendingDeath) {
+        set({ pendingDying: { id: newPendingId("dying") } });
+      }
+      return;
+    }
 
     // The player has fallen — but per 5e RAW, they're not dead yet. Enter the
     // death-save loop. Combat/check/reaction UI is suppressed; pendingDying
@@ -1576,11 +1782,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         pendingCheck: null,
         pendingSave: null,
         pendingReaction: null,
+        pendingConcentration: null,
+        concentrationQueue: [],
         actionEconomy: { action: false, bonus: false },
         turnNonce: get().turnNonce + 1,
-        pendingDying: {
-          id: `dying_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        },
+        pendingDying: { id: newPendingId("dying") },
       });
     }
   },
@@ -1592,6 +1798,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   async startEncounter(entries) {
     const { campaignId } = get();
     if (!campaignId) return;
+    // A finished (or replaced) fight must not stay "combat" in the DB, or the
+    // next loadCampaign would resurrect it next to the new one.
+    await db.encounters
+      .where("campaignId")
+      .equals(campaignId)
+      .filter((e) => e.mode === "combat")
+      .modify({ mode: "exploration", updatedAt: Date.now() });
     const sorted = [...entries].sort((a, b) => b.initiative - a.initiative);
     const encounter: EncounterState = {
       id: `enc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1618,7 +1831,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         updatedAt: Date.now(),
       });
     }
+    // Round-based condition timers stop meaning anything once combat ends.
+    // (Read the character after the write above: it may have changed.)
+    const character = get().character;
+    let settled: Character | null = null;
+    if (encounter && character) {
+      const next = settleCombatTimers(character);
+      if (next !== character) {
+        settled = next;
+        await db.characters.put(next);
+      }
+    }
     set({
+      ...(settled ? { character: settled } : {}),
       encounter: null,
       pendingReaction: null,
       actionEconomy: { action: false, bonus: false },
@@ -1670,6 +1895,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   reset() {
+    liveTurn?.controller.abort();
+    liveTurn = null;
     set({ ...initial });
   },
 }));
