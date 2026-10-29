@@ -56,6 +56,13 @@ export function resetAllSlots(char: Character): Character {
   return { ...char, spellSlots: nextSlots, updatedAt: Date.now() };
 }
 
+/** Pact Magic slot count by warlock level (SRD): 1, 2, 3 from L11, 4 from L17. */
+export function pactSlotCount(warlockLevel: number): number {
+  if (warlockLevel >= 17) return 4;
+  if (warlockLevel >= 11) return 3;
+  return warlockLevel >= 2 ? 2 : 1;
+}
+
 /** Warlock-only: short rest refunds all Pact Magic slots (level = pact level). */
 export function resetWarlockSlots(char: Character): Character {
   const warlock = char.classes.find((c) => c.classId === "warlock");
@@ -65,9 +72,12 @@ export function resetWarlockSlots(char: Character): Character {
   const slots = char.spellSlots;
   if (!slots) return char;
   const key = slotKey(pactLevel);
+  // The sheet keeps one pool per level; refund only the pact slots' share so
+  // a multiclass warlock doesn't also recover table slots of the same level.
+  const used = Math.max(0, slots[key].used - pactSlotCount(warlock.level));
   return {
     ...char,
-    spellSlots: { ...slots, [key]: { max: slots[key].max, used: 0 } },
+    spellSlots: { ...slots, [key]: { max: slots[key].max, used } },
     updatedAt: Date.now(),
   };
 }
@@ -98,45 +108,133 @@ export function endConcentration(char: Character): Character {
   return { ...char, concentration: null, updatedAt: Date.now() };
 }
 
+type ClassSlotTable = {
+  spell_slots_level_1?: number;
+  spell_slots_level_2?: number;
+  spell_slots_level_3?: number;
+  spell_slots_level_4?: number;
+  spell_slots_level_5?: number;
+  spell_slots_level_6?: number;
+  spell_slots_level_7?: number;
+  spell_slots_level_8?: number;
+  spell_slots_level_9?: number;
+};
+
+/** How a class's levels count toward multiclass caster level. */
+export type CasterKind = "full" | "half" | "third" | "pact";
+
+const FULL_CASTERS = new Set(["bard", "cleric", "druid", "sorcerer", "wizard"]);
+const HALF_CASTERS = new Set(["paladin", "ranger"]);
+const THIRD_CASTER_SUBCLASSES = new Set(["eldritch-knight", "arcane-trickster"]);
+
+export function casterKind(classId: string, subclassId?: string): CasterKind | null {
+  if (FULL_CASTERS.has(classId)) return "full";
+  if (HALF_CASTERS.has(classId)) return "half";
+  if (classId === "warlock") return "pact";
+  if (subclassId && THIRD_CASTER_SUBCLASSES.has(subclassId)) return "third";
+  return null;
+}
+
+/**
+ * SRD multiclass spellcaster table: slots by combined caster level (index 0 =
+ * level 1), as [1st..9th].
+ */
+const MULTICLASS_SLOTS: readonly (readonly number[])[] = [
+  [2],
+  [3],
+  [4, 2],
+  [4, 3],
+  [4, 3, 2],
+  [4, 3, 3],
+  [4, 3, 3, 1],
+  [4, 3, 3, 2],
+  [4, 3, 3, 3, 1],
+  [4, 3, 3, 3, 2],
+  [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+
+/**
+ * Combined caster level: full casters count their level, half casters
+ * (paladin, ranger) half rounded down, third casters a third rounded down.
+ * Warlock pact magic is separate and never counts.
+ */
+export function multiclassCasterLevel(
+  classes: { classId: string; level: number; subclassId?: string }[],
+): number {
+  let total = 0;
+  for (const c of classes) {
+    const kind = casterKind(c.classId, c.subclassId);
+    if (kind === "full") total += c.level;
+    else if (kind === "half") total += Math.floor(c.level / 2);
+    else if (kind === "third") total += Math.floor(c.level / 3);
+  }
+  return Math.min(20, total);
+}
+
+/** Slots [1st..9th] for a combined caster level (zeros below level 1). */
+export function multiclassSlotsForLevel(casterLevel: number): number[] {
+  const row = MULTICLASS_SLOTS[Math.min(20, Math.floor(casterLevel)) - 1] ?? [];
+  return Array.from({ length: 9 }, (_, i) => row[i] ?? 0);
+}
+
 /**
  * Compute spell-slot capacities from the class progression and populate the
  * character's `spellSlots`. Re-runnable: existing `used` is preserved up to
  * the new max (a level-down or schema change can't leave an overspend).
  *
- * For multiclassed casters we sum the slot caps per level — that's not
- * strictly the 5e RAW multiclass spellcaster table, but it's a sane single-
- * caster approximation and survives the common cases.
+ * A single spellcasting class uses its own SRD table. Two or more use the SRD
+ * multiclass spellcaster table (see `multiclassCasterLevel`). Warlock Pact
+ * Magic never enters that calculation; its slots are added on top, and since
+ * the sheet stores one pool per level they share a row with the table slots.
  */
 export function initializeSlotsFromClasses(
   char: Character,
-  resolveClassSlots: (
-    classId: string,
-    level: number,
-  ) => {
-    spell_slots_level_1?: number;
-    spell_slots_level_2?: number;
-    spell_slots_level_3?: number;
-    spell_slots_level_4?: number;
-    spell_slots_level_5?: number;
-    spell_slots_level_6?: number;
-    spell_slots_level_7?: number;
-    spell_slots_level_8?: number;
-    spell_slots_level_9?: number;
-  } | null,
+  resolveClassSlots: (classId: string, level: number) => ClassSlotTable | null,
 ): Character {
   const out = emptySpellSlots();
+  const add = (lvl: number, n: number): void => {
+    if (n <= 0) return;
+    const k = `l${lvl}` as keyof SpellSlots;
+    out[k] = { max: out[k].max + n, used: 0 };
+  };
+  const tableCasters = char.classes.filter((c) => {
+    const kind = casterKind(c.classId, c.subclassId);
+    return kind !== null && kind !== "pact";
+  });
   let anyCaster = false;
+  const useTable =
+    tableCasters.length >= 2 ||
+    tableCasters.some((c) => casterKind(c.classId, c.subclassId) === "third");
+  if (useTable) {
+    const slots = multiclassSlotsForLevel(multiclassCasterLevel(tableCasters));
+    slots.forEach((n, i) => add(i + 1, n));
+    anyCaster = true;
+  } else {
+    for (const c of tableCasters) {
+      const sc = resolveClassSlots(c.classId, c.level);
+      if (!sc) continue;
+      anyCaster = true;
+      for (let lvl = 1; lvl <= 9; lvl++) {
+        add(lvl, sc[`spell_slots_level_${lvl}` as keyof ClassSlotTable] ?? 0);
+      }
+    }
+  }
   for (const c of char.classes) {
+    if (casterKind(c.classId, c.subclassId) !== "pact") continue;
     const sc = resolveClassSlots(c.classId, c.level);
     if (!sc) continue;
     anyCaster = true;
     for (let lvl = 1; lvl <= 9; lvl++) {
-      const key = `spell_slots_level_${lvl}` as keyof typeof sc;
-      const v = sc[key] ?? 0;
-      if (v > 0) {
-        const slotKeyName = `l${lvl}` as keyof SpellSlots;
-        out[slotKeyName] = { max: out[slotKeyName].max + v, used: 0 };
-      }
+      add(lvl, sc[`spell_slots_level_${lvl}` as keyof ClassSlotTable] ?? 0);
     }
   }
   if (!anyCaster) return char;

@@ -42,7 +42,7 @@ export interface DeathPipsState {
 
 export function applyDeathSaveOutcome(
   pips: DeathPipsState,
-  outcome: DeathSaveOutcome,
+  outcome: Pick<DeathSaveOutcome, "successesDelta" | "failuresDelta">,
 ): DeathPipsState {
   return {
     successes: Math.min(3, pips.successes + outcome.successesDelta),
@@ -68,4 +68,50 @@ export function evaluateDying(pips: DeathPipsState): DyingResolution["kind"] {
   if (pips.failures >= 3) return "dead";
   if (pips.successes >= 3) return "stabilized";
   return "still-dying";
+}
+
+/** Persisted death-save pips; `stable` marks 0 HP without the dying loop. */
+export interface DeathSavesState extends DeathPipsState {
+  stable?: boolean;
+}
+
+export const CLEAR_DEATH_SAVES: DeathSavesState = { successes: 0, failures: 0 };
+
+export type DyingStatus = "dying" | "stable" | "dead" | "recovered";
+
+/**
+ * Fold one death-save roll's deltas into the persisted state. Three
+ * failures = dead, three successes = stable (pips reset, so a later fall
+ * starts fresh), a natural 20 wakes the character with 1 HP.
+ */
+export function resolveDeathSaveDelta(
+  saves: DeathSavesState,
+  delta: { successes: number; failures: number; recovered: boolean },
+): { deathSaves: DeathSavesState; status: DyingStatus } {
+  if (delta.recovered) return { deathSaves: { ...CLEAR_DEATH_SAVES }, status: "recovered" };
+  const pips = applyDeathSaveOutcome(saves, {
+    successesDelta: delta.successes,
+    failuresDelta: delta.failures,
+  });
+  const verdict = evaluateDying(pips);
+  if (verdict === "dead") return { deathSaves: pips, status: "dead" };
+  if (verdict === "stabilized") {
+    return { deathSaves: { ...CLEAR_DEATH_SAVES, stable: true }, status: "stable" };
+  }
+  return { deathSaves: pips, status: "dying" };
+}
+
+/**
+ * Damage taken while already at 0 HP: one automatic failure (two on a crit).
+ * Also ends stability — a stabilized character starts dying again.
+ */
+export function damageWhileAtZero(
+  saves: DeathSavesState,
+  crit: boolean,
+): { deathSaves: DeathSavesState; status: "dying" | "dead" } {
+  const pips = damageAtZero(saves, crit);
+  return {
+    deathSaves: { successes: pips.successes, failures: pips.failures },
+    status: pips.failures >= 3 ? "dead" : "dying",
+  };
 }

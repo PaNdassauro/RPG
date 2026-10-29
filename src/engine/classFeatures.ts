@@ -210,14 +210,6 @@ export function syncFeatureCounters(char: Character): Character {
       die,
     });
   }
-  if (l.cleric >= 2) {
-    target.push({
-      id: "channel-divinity",
-      max: l.cleric >= 18 ? 3 : l.cleric >= 6 ? 2 : 1,
-      current: l.cleric >= 18 ? 3 : l.cleric >= 6 ? 2 : 1,
-      perRest: "short",
-    });
-  }
   if (l.paladin >= 1) {
     // Lay on Hands pool = paladinLevel × 5 HP. Refresh on long rest.
     target.push({
@@ -227,18 +219,27 @@ export function syncFeatureCounters(char: Character): Character {
       perRest: "long",
     });
   }
-  if (l.paladin >= 3) {
+  // Cleric and Paladin both grant Channel Divinity. One shared counter, sized
+  // to the larger source — pushing one per class would duplicate the id.
+  const channelDivinityMax = Math.max(
+    l.cleric >= 18 ? 3 : l.cleric >= 6 ? 2 : l.cleric >= 2 ? 1 : 0,
+    l.paladin >= 3 ? 1 : 0,
+  );
+  if (channelDivinityMax > 0) {
     target.push({
       id: "channel-divinity",
-      max: 1,
-      current: 1,
+      max: channelDivinityMax,
+      current: channelDivinityMax,
       perRest: "short",
     });
   }
   void profBonus;
 
   // Preserve `current` from existing counters where possible.
-  const existing = new Map(char.usageCounters.map((c) => [c.id, c]));
+  // (A save written by the old duplicate-id bug may hold two of the same id:
+  // `findCounter`/`spendCounter` only ever touched the first, so it wins.)
+  const existing = new Map<string, UsageCounter>();
+  for (const c of char.usageCounters) if (!existing.has(c.id)) existing.set(c.id, c);
   const merged: UsageCounter[] = target.map((t) => {
     const prev = existing.get(t.id);
     if (!prev) return t;

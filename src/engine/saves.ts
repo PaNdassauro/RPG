@@ -56,11 +56,10 @@ export function resolveSavingThrow(
     },
     total: result.total,
     dc,
-    success: result.isCritical
-      ? true
-      : result.isFumble
-        ? false
-        : result.total >= dc,
+    // 5e RAW: a natural 20/1 only auto-succeeds/fails attack rolls (and death
+    // saves) — never ability checks or saves. The crit/fumble flags below are
+    // visual only.
+    success: result.total >= dc,
     isCritical: result.isCritical,
     isFumble: result.isFumble,
   };
