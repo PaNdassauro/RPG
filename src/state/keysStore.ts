@@ -1,5 +1,9 @@
 import { create } from "zustand";
 import { db, type ApiKeyRecord, type ProviderId } from "@/db/schema";
+import {
+  DEFAULT_CLAUDE_MODEL,
+  isKnownClaudeModel,
+} from "@/ai/providers/anthropic";
 
 const SETTINGS_KEY = "active_provider";
 
@@ -22,7 +26,11 @@ export const useKeysStore = create<KeysState>((set) => ({
   async load() {
     const all = await db.apiKeys.toArray();
     const records: Partial<Record<ProviderId, ApiKeyRecord>> = {};
-    for (const r of all) records[r.providerId] = r;
+    for (const r of all) {
+      const migrated = migrateRecord(r);
+      if (migrated !== r) await db.apiKeys.put(migrated);
+      records[migrated.providerId] = migrated;
+    }
     const activeRow = await db.settings.get(SETTINGS_KEY);
     const active =
       typeof activeRow?.value === "string"
@@ -74,6 +82,22 @@ export const useKeysStore = create<KeysState>((set) => ({
     set({ activeProvider: providerId });
   },
 }));
+
+/**
+ * Saved Claude model ids that are no longer offered (retired 4.x ids) move to
+ * the current default. OpenAI and Ollama accept free-text model ids, so those
+ * are left alone.
+ */
+export function migrateRecord(record: ApiKeyRecord): ApiKeyRecord {
+  if (
+    record.providerId === "claude" &&
+    record.model !== undefined &&
+    !isKnownClaudeModel(record.model)
+  ) {
+    return { ...record, model: DEFAULT_CLAUDE_MODEL, updatedAt: Date.now() };
+  }
+  return record;
+}
 
 /**
  * Configure a single Dexie watcher so any tab/window that mutates the keys

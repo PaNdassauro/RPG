@@ -17,6 +17,10 @@ import {
   OPENAI_MODEL_OPTIONS,
   DEFAULT_OPENAI_MODEL,
 } from "@/ai/providers/openai";
+import {
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
+} from "@/ai/providers";
 import { useT } from "@/i18n";
 import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 import type { ProviderId } from "@/db/schema";
@@ -26,15 +30,25 @@ interface ProviderMeta {
   id: ProviderId;
   keyPrefix: string;
   available: boolean;
+  /** False for local servers that need no API key. */
+  requiresKey: boolean;
   models?: ReadonlyArray<{ id: string; label: string }>;
+  /** Allow typing a model id that is not in `models` (or any id when `models` is absent). */
+  customModel?: boolean;
   defaultModel?: string;
+  /** Endpoint is user-configurable (local OpenAI-compatible servers). */
+  defaultBaseUrl?: string;
 }
+
+/** Select sentinel for "type my own model id" (an empty value would make it uncontrolled). */
+const CUSTOM_MODEL = "__custom__";
 
 const PROVIDERS: ProviderMeta[] = [
   {
     id: "claude",
     keyPrefix: "sk-ant-…",
     available: true,
+    requiresKey: true,
     models: CLAUDE_MODEL_OPTIONS,
     defaultModel: DEFAULT_CLAUDE_MODEL,
   },
@@ -42,11 +56,21 @@ const PROVIDERS: ProviderMeta[] = [
     id: "openai",
     keyPrefix: "sk-…",
     available: true,
+    requiresKey: true,
     models: OPENAI_MODEL_OPTIONS,
+    customModel: true,
     defaultModel: DEFAULT_OPENAI_MODEL,
   },
-  { id: "gemini", keyPrefix: "AI…", available: false },
-  { id: "ollama", keyPrefix: "(no key)", available: false },
+  { id: "gemini", keyPrefix: "AI…", available: false, requiresKey: true },
+  {
+    id: "ollama",
+    keyPrefix: "(no key)",
+    available: true,
+    requiresKey: false,
+    customModel: true,
+    defaultModel: DEFAULT_OLLAMA_MODEL,
+    defaultBaseUrl: DEFAULT_OLLAMA_BASE_URL,
+  },
 ];
 
 export function SettingsScreen() {
@@ -321,6 +345,10 @@ function ProviderPanel({
   const [model, setModel] = useState(
     existing?.model ?? provider.defaultModel ?? "",
   );
+  const [baseUrl, setBaseUrl] = useState(
+    existing?.baseUrl ?? provider.defaultBaseUrl ?? "",
+  );
+  const [customMode, setCustomMode] = useState(false);
   const [reveal, setReveal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -328,9 +356,17 @@ function ProviderPanel({
   useEffect(() => {
     setKeyInput("");
     setModel(existing?.model ?? provider.defaultModel ?? "");
+    setBaseUrl(existing?.baseUrl ?? provider.defaultBaseUrl ?? "");
+    setCustomMode(false);
     setReveal(false);
     setFeedback(null);
-  }, [existing?.providerId, existing?.model, provider.defaultModel]);
+  }, [
+    existing?.providerId,
+    existing?.model,
+    existing?.baseUrl,
+    provider.defaultModel,
+    provider.defaultBaseUrl,
+  ]);
 
   if (!loaded) {
     return <p className="text-sm text-text-muted">{t("settings.loadingKeys")}</p>;
@@ -348,18 +384,27 @@ function ProviderPanel({
   }
 
   const isActive = activeProvider === provider.id;
+  const knownModelIds = provider.models?.map((m) => m.id) ?? [];
+  const usingCustomModel =
+    !!provider.customModel &&
+    (customMode || (model !== "" && !knownModelIds.includes(model)));
+  const selectValue = usingCustomModel ? CUSTOM_MODEL : model;
+  // Providers with no preset list (Ollama) always show the text box.
+  const showCustomInput = !provider.models ? !!provider.customModel : usingCustomModel;
 
   async function onSave() {
-    if (!keyInput.trim() && !existing) {
+    if (provider.requiresKey && !keyInput.trim() && !existing) {
       setFeedback(t("settings.enterKey"));
       return;
     }
     setSaving(true);
     try {
+      const trimmedUrl = baseUrl.trim();
       await saveKey({
         providerId: provider.id,
         key: keyInput.trim() || existing?.key || "",
-        model: model || provider.defaultModel,
+        model: model.trim() || provider.defaultModel,
+        ...(provider.defaultBaseUrl && trimmedUrl ? { baseUrl: trimmedUrl } : {}),
         updatedAt: Date.now(),
       });
       setKeyInput("");
@@ -381,68 +426,129 @@ function ProviderPanel({
         {t(`providers.${provider.id}.blurb`)}
       </p>
 
-      <div>
-        <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
-          {t("settings.apiKeyLabel")}
-        </label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type={reveal ? "text" : "password"}
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              placeholder={
-                existing
-                  ? `${existing.key.slice(0, 6)}…${existing.key.slice(-4)}`
-                  : provider.keyPrefix
-              }
-              className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 pr-10 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
-              autoComplete="off"
-              spellCheck={false}
-            />
+      {provider.defaultBaseUrl && (
+        <div>
+          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+            {t("settings.baseUrlLabel")}
+          </label>
+          <input
+            type="text"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={provider.defaultBaseUrl}
+            className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      )}
+
+      {provider.requiresKey ? (
+        <div>
+          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+            {t("settings.apiKeyLabel")}
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={reveal ? "text" : "password"}
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder={
+                  existing
+                    ? `${existing.key.slice(0, 6)}…${existing.key.slice(-4)}`
+                    : provider.keyPrefix
+                }
+                className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 pr-10 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                onClick={() => setReveal((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+                tabIndex={-1}
+              >
+                {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setReveal((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-              tabIndex={-1}
+              onClick={onSave}
+              disabled={saving}
+              className="rounded-md border border-accent-muted/60 bg-accent/15 px-4 font-display text-xs uppercase tracking-widest text-accent transition hover:bg-accent/25 disabled:opacity-50"
             >
-              {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {existing ? t("common.update") : t("common.save")}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="rounded-md border border-accent-muted/60 bg-accent/15 px-4 font-display text-xs uppercase tracking-widest text-accent transition hover:bg-accent/25 disabled:opacity-50"
-          >
-            {existing ? t("common.update") : t("common.save")}
-          </button>
         </div>
-      </div>
+      ) : (
+        <p className="text-xs text-text-muted">{t("settings.noKeyNeeded")}</p>
+      )}
 
-      {provider.models && (
+      {(provider.models || provider.customModel) && (
         <div>
           <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
             {t("settings.modelLabel")}
           </label>
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none"
-          >
-            {provider.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          {provider.models && (
+            <select
+              value={selectValue}
+              onChange={(e) => {
+                if (e.target.value === CUSTOM_MODEL) {
+                  setCustomMode(true);
+                  setModel("");
+                } else {
+                  setCustomMode(false);
+                  setModel(e.target.value);
+                }
+              }}
+              className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none"
+            >
+              {provider.models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+              {provider.customModel && (
+                <option value={CUSTOM_MODEL}>{t("settings.customModelOption")}</option>
+              )}
+            </select>
+          )}
+          {showCustomInput && (
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={provider.defaultModel ?? t("settings.customModelPlaceholder")}
+              className={cn(
+                "w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted",
+                provider.models && "mt-2",
+              )}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          )}
         </div>
+      )}
+
+      {!provider.requiresKey && (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="rounded-md border border-accent-muted/60 bg-accent/15 px-4 py-2 font-display text-xs uppercase tracking-widest text-accent transition hover:bg-accent/25 disabled:opacity-50"
+        >
+          {existing ? t("common.update") : t("common.save")}
+        </button>
       )}
 
       {existing && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface/60 px-4 py-3">
           <span className="font-mono text-xs text-text-muted">
-            {t("settings.keyOnFile")} {existing.key.slice(0, 4)}…{existing.key.slice(-4)}
+            {provider.requiresKey
+              ? `${t("settings.keyOnFile")} ${existing.key.slice(0, 4)}…${existing.key.slice(-4)}`
+              : `${t("settings.endpointOnFile")} ${existing.baseUrl ?? provider.defaultBaseUrl ?? ""}`}
           </span>
           {!isActive ? (
             <button
@@ -474,10 +580,22 @@ function ProviderPanel({
       )}
 
       <p className="text-xs leading-relaxed text-text-muted/70">
-        {t("settings.endpointHelp", { endpoint: providerEndpoint(provider.id) })}
+        {t("settings.endpointHelp", {
+          endpoint: provider.defaultBaseUrl
+            ? hostOf(baseUrl || provider.defaultBaseUrl)
+            : providerEndpoint(provider.id),
+        })}
       </p>
     </div>
   );
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 function providerEndpoint(id: ProviderId): string {
