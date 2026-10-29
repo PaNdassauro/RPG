@@ -126,7 +126,8 @@ describe("buildAnthropicBody", () => {
   it("sends model-specific latency fields only where documented", () => {
     expect(modelRequestExtras("claude-opus-5-5")).toEqual({ output_config: { effort: "low" } });
     expect(modelRequestExtras("claude-sonnet-5-5")).toEqual({ thinking: { type: "between_tools" } });
-    expect(modelRequestExtras("claude-haiku-5-5")).toEqual({});
+    expect(modelRequestExtras("claude-haiku-5-5")).toEqual({ output_config: { effort: "low" } });
+    expect(modelRequestExtras("claude-fable-5-1")).toEqual({ output_config: { effort: "low" } });
     expect(modelRequestExtras("something-else")).toEqual({});
   });
 });
@@ -258,8 +259,10 @@ describe("OpenAI-compatible streaming", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.openai.com/v1/chat/completions");
     const sent = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(sent.max_completion_tokens).toBe(4096);
+    expect(sent.max_completion_tokens).toBe(8192);
     expect(sent).not.toHaveProperty("max_tokens");
+    expect(sent.model).toBe("gpt-6.1-sol");
+    expect(sent.reasoning_effort).toBe("low");
   });
 
   it("flushes the last event at EOF when the server omits the trailing blank line", async () => {
@@ -320,8 +323,9 @@ describe("createProviderFromRecord", () => {
     expect(init.headers).not.toHaveProperty("Authorization");
     const sent = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(sent.model).toBe("qwen3");
-    expect(sent.max_tokens).toBe(4096);
+    expect(sent.max_tokens).toBe(8192);
     expect(sent).not.toHaveProperty("max_completion_tokens");
+    expect(sent).not.toHaveProperty("reasoning_effort");
   });
 });
 
@@ -337,5 +341,11 @@ describe("saved model migration", () => {
     const custom: ApiKeyRecord = { providerId: "openai", key: "k", model: "my-fine-tune", updatedAt: 1 };
     expect(migrateRecord(custom)).toBe(custom);
     expect(migrateRecord(base)).toBe(base);
+  });
+  it("moves OpenAI ids from the old GPT-4 list to the new default", () => {
+    const old: ApiKeyRecord = { providerId: "openai", key: "k", model: "gpt-4o", updatedAt: 1 };
+    expect(migrateRecord(old).model).toBe("gpt-6.1-sol");
+    const current: ApiKeyRecord = { providerId: "openai", key: "k", model: "gpt-6-astra", updatedAt: 1 };
+    expect(migrateRecord(current)).toBe(current);
   });
 });

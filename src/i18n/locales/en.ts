@@ -93,7 +93,7 @@ const en = {
     baseUrlLabel: "Endpoint",
     endpointOnFile: "Endpoint ·",
     customModelOption: "Custom model id…",
-    customModelPlaceholder: "Model id, e.g. gpt-4.1",
+    customModelPlaceholder: "Model id, e.g. gpt-6.1-sol",
     noKeyNeeded: "No key needed for a local server.",
     showKey: "Show key",
     hideKey: "Hide key",
@@ -137,12 +137,12 @@ const en = {
     claude: {
       name: "Anthropic Claude",
       blurb:
-        "Best at long-form narrative and roleplay. Sonnet 5.5 is the recommended default; Opus 5.5 for richer prose at higher cost; Haiku 5.5 is the fastest and cheapest.",
+        "Best at long-form narrative and roleplay. Sonnet 5.5 is the recommended default; Opus 5.5 for richer prose at higher cost; Haiku 5.5 is the fastest and cheapest; Fable 5.1 is the most capable, but slow and five times Sonnet's price.",
     },
     openai: {
       name: "OpenAI GPT",
       blurb:
-        "Strong narrative and dialogue. GPT-4o is the workhorse choice; GPT-4o mini is the cheapest path that still feels alive. Any other chat model can be typed in as a custom model id.",
+        "Strong narrative and dialogue. GPT-6.1 Sol is the recommended default; Terra is faster with natural prose; Astra is the most capable at five times the price; Luna is the cheapest. Any other chat model can be typed in as a custom model id.",
     },
     gemini: {
       name: "Google Gemini",

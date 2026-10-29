@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-Open the app, go to **Settings**, and add an API key for Anthropic or OpenAI. Anthropic defaults to Claude Sonnet 5.5 (Opus 5.5 and Haiku 5.5 are also offered); for OpenAI you can pick a preset or type any chat model id.
+Open the app, go to **Settings**, and add an API key for Anthropic or OpenAI. Anthropic defaults to Claude Sonnet 5.5 (Opus 5.5, Haiku 5.5 and Fable 5.1 are also offered); OpenAI defaults to GPT-6.1 Sol (Terra, Astra and Luna are also offered), or you can type any chat model id.
 
 To play against a local model, install [Ollama](https://ollama.com), pull a model (for example `ollama pull llama3.1`), and choose **Local · Ollama** in Settings. The default endpoint is `http://localhost:11434/v1` and no key is needed. Because the app calls the model straight from your browser, start Ollama with `OLLAMA_ORIGINS` set to the app's origin, for example `OLLAMA_ORIGINS=http://localhost:5173 ollama serve`, or the browser will block the requests.
 

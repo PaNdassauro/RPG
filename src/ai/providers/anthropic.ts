@@ -30,14 +30,15 @@ export const CLAUDE_MODEL_OPTIONS = [
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5 (recommended)" },
   { id: "claude-opus-5-5", label: "Opus 5.5 (richest prose, slowest)" },
   { id: "claude-haiku-5-5", label: "Haiku 5.5 (fastest, lightest)" },
+  { id: "claude-fable-5-1", label: "Fable 5.1 (most capable, slowest, 5× Sonnet price)" },
 ] as const;
 
 export function isKnownClaudeModel(id: string): boolean {
   return CLAUDE_MODEL_OPTIONS.some((m) => m.id === id);
 }
 
-/** Default output cap. Thinking tokens on the 5.5 models count toward it. */
-const DEFAULT_MAX_TOKENS = 4096;
+/** Default output cap. Thinking tokens count toward it, so leave headroom. */
+const DEFAULT_MAX_TOKENS = 8192;
 
 interface AnthropicConfig {
   apiKey: string;
@@ -62,13 +63,20 @@ export function mapAnthropicStopReason(reason: string | null | undefined): StopR
 }
 
 /**
- * Request fields that keep latency low on the 5.5 models. Both are documented
- * request shapes: `output_config.effort` (GA) and `thinking: between_tools`
- * (Sonnet 5.5 only; it takes no other field and requires effort <= high, which
- * is its default). Other models get nothing extra — unknown fields are a 400.
+ * Request fields that keep latency low. Both are documented request shapes:
+ * `output_config.effort` (GA) and `thinking: between_tools` (Sonnet 5.5 only;
+ * it takes no other field and requires effort <= high, which is its default).
+ * Opus 5.5, Fable 5.1 and Haiku 5.5 can't turn thinking off, so they run at
+ * low effort instead. Other models get nothing extra — unknown fields are a 400.
  */
 export function modelRequestExtras(model: string): Record<string, unknown> {
-  if (model.startsWith("claude-opus-5-5")) return { output_config: { effort: "low" } };
+  if (
+    model.startsWith("claude-opus-5-5") ||
+    model.startsWith("claude-fable-5-1") ||
+    model.startsWith("claude-haiku-5-5")
+  ) {
+    return { output_config: { effort: "low" } };
+  }
   if (model.startsWith("claude-sonnet-5-5")) return { thinking: { type: "between_tools" } };
   return {};
 }

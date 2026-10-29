@@ -4,6 +4,7 @@ import {
   DEFAULT_CLAUDE_MODEL,
   isKnownClaudeModel,
 } from "@/ai/providers/anthropic";
+import { DEFAULT_OPENAI_MODEL, RETIRED_OPENAI_MODELS } from "@/ai/providers/openai";
 
 const SETTINGS_KEY = "active_provider";
 
@@ -85,8 +86,8 @@ export const useKeysStore = create<KeysState>((set) => ({
 
 /**
  * Saved Claude model ids that are no longer offered (retired 4.x ids) move to
- * the current default. OpenAI and Ollama accept free-text model ids, so those
- * are left alone.
+ * the current default. OpenAI ids move only when they came from the old model
+ * list (GPT-4 family); custom OpenAI and Ollama ids are left alone.
  */
 export function migrateRecord(record: ApiKeyRecord): ApiKeyRecord {
   if (
@@ -95,6 +96,13 @@ export function migrateRecord(record: ApiKeyRecord): ApiKeyRecord {
     !isKnownClaudeModel(record.model)
   ) {
     return { ...record, model: DEFAULT_CLAUDE_MODEL, updatedAt: Date.now() };
+  }
+  if (
+    record.providerId === "openai" &&
+    record.model !== undefined &&
+    RETIRED_OPENAI_MODELS.has(record.model)
+  ) {
+    return { ...record, model: DEFAULT_OPENAI_MODEL, updatedAt: Date.now() };
   }
   return record;
 }

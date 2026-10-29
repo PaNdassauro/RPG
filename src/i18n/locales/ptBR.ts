@@ -94,7 +94,7 @@ const ptBR = {
     baseUrlLabel: "Endereço (endpoint)",
     endpointOnFile: "Endpoint ·",
     customModelOption: "ID de modelo personalizado…",
-    customModelPlaceholder: "ID do modelo, ex.: gpt-4.1",
+    customModelPlaceholder: "ID do modelo, ex.: gpt-6.1-sol",
     noKeyNeeded: "Nenhuma chave necessária para um servidor local.",
     showKey: "Mostrar chave",
     hideKey: "Ocultar chave",
@@ -138,12 +138,12 @@ const ptBR = {
     claude: {
       name: "Anthropic Claude",
       blurb:
-        "Excelente em narrativa longa e roleplay. Sonnet 5.5 é o padrão recomendado; Opus 5.5 entrega prosa mais rica a um custo maior; Haiku 5.5 é o mais rápido e barato.",
+        "Excelente em narrativa longa e roleplay. Sonnet 5.5 é o padrão recomendado; Opus 5.5 entrega prosa mais rica a um custo maior; Haiku 5.5 é o mais rápido e barato; Fable 5.1 é o mais capaz, mas lento e cinco vezes o preço do Sonnet.",
     },
     openai: {
       name: "OpenAI GPT",
       blurb:
-        "Forte em narrativa e diálogo. GPT-4o é a escolha de cavalo de batalha; GPT-4o mini é o caminho mais barato que ainda parece vivo. Qualquer outro modelo de chat pode ser digitado como ID personalizado.",
+        "Forte em narrativa e diálogo. GPT-6.1 Sol é o padrão recomendado; Terra é mais rápido, com prosa natural; Astra é o mais capaz, por cinco vezes o preço; Luna é o mais barato. Qualquer outro modelo de chat pode ser digitado como ID personalizado.",
     },
     gemini: {
       name: "Google Gemini",

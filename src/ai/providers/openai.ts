@@ -24,16 +24,34 @@ import {
   isAbortError,
 } from "./http";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-4o";
+export const DEFAULT_OPENAI_MODEL = "gpt-6.1-sol";
 export const OPENAI_MODEL_OPTIONS = [
-  { id: "gpt-4o", label: "GPT-4o (recommended)" },
-  { id: "gpt-4o-mini", label: "GPT-4o mini (fastest, cheapest)" },
-  { id: "gpt-4.1", label: "GPT-4.1" },
-  { id: "gpt-4-turbo", label: "GPT-4 Turbo" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol (recommended)" },
+  { id: "gpt-6.1-terra", label: "GPT-6.1 Terra (fast, natural prose)" },
+  { id: "gpt-6-astra", label: "GPT-6 Astra (most capable, 5× Sol price)" },
+  { id: "gpt-6-luna", label: "GPT-6 Luna (cheapest)" },
 ] as const;
 
+/** Ids the model list used to offer. Saved records holding one move to the default. */
+export const RETIRED_OPENAI_MODELS: ReadonlySet<string> = new Set([
+  "gpt-4o",
+  "gpt-4o-mini",
+  "gpt-4.1",
+  "gpt-4-turbo",
+]);
+
+/**
+ * GPT-6 models reason before answering (default effort `medium`, and the
+ * reasoning tokens count toward the output cap). A DM turn doesn't need deep
+ * reasoning, so ask for `low` — the lowest level every GPT-6 model accepts.
+ * Other models (custom ids, Ollama) get nothing extra.
+ */
+export function openAiRequestExtras(model: string): Record<string, unknown> {
+  return /^gpt-6/.test(model) ? { reasoning_effort: "low" } : {};
+}
+
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MAX_TOKENS = 4096;
+const DEFAULT_MAX_TOKENS = 8192;
 
 interface OpenAIConfig {
   /** Optional for local OpenAI-compatible servers (Ollama). */
@@ -136,6 +154,7 @@ export function createOpenAIProvider(config: OpenAIConfig): LLMProvider {
                 })),
               ],
               [tokenParam]: maxTokens,
+              ...openAiRequestExtras(args.model ?? model),
               stream: true,
             }),
           },
