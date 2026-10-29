@@ -1,14 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --color-canvas: #050505;
-  --color-surface: #0d0d0d;
-  --color-surface-elevated: #161616;
-  --color-line: #1f1f1f;
-  --color-accent: #ededed;
-  --color-accent-muted: #6b7280;
-  --color-text: #ededed;
-  --color-text-muted: #9ca3af;
+  /* Warm black, gold accent, parchment text. Muted tokens stay ≥4.5:1 on surface. */
+  --color-canvas: #0a0907;
+  --color-surface: #13110e;
+  --color-surface-elevated: #1b1814;
+  --color-line: #2a251e;
+  --color-accent: #d4af37;
+  --color-accent-muted: #a8915e;
+  --color-text: #ece4d4;
+  --color-text-muted: #a8a095;
   --color-success: #86c47e;
   --color-danger: #f87171;
 
