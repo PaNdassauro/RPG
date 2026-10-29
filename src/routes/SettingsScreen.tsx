@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye, EyeOff, Trash2, Check, Sparkles, Download, Upload, Volume2 } from "lucide-react";
 import { ensureKeysLoaded, useKeysStore } from "@/state/keysStore";
@@ -43,6 +43,10 @@ interface ProviderMeta {
 /** Select sentinel for "type my own model id" (an empty value would make it uncontrolled). */
 const CUSTOM_MODEL = "__custom__";
 
+/** Ring drawn inside the tab so the grid cell/overflow doesn't clip it. */
+const FOCUS_INSET =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60";
+
 const PROVIDERS: ProviderMeta[] = [
   {
     id: "claude",
@@ -86,7 +90,7 @@ export function SettingsScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-4xl flex-col px-6 py-10">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Link
           to="/"
           className="font-display text-xs uppercase tracking-widest text-text-muted hover:text-text"
@@ -120,7 +124,7 @@ export function SettingsScreen() {
       </section>
 
       <div className="mt-6 rounded-md border border-line bg-surface/50">
-        <div className="flex flex-wrap border-b border-line">
+        <div className="grid grid-cols-2 border-b border-line sm:flex sm:flex-wrap">
           {PROVIDERS.map((p) => {
             const isActive = activeTab === p.id;
             const hasKey = !!records[p.id];
@@ -131,8 +135,10 @@ export function SettingsScreen() {
                 type="button"
                 onClick={() => setActiveTab(p.id)}
                 disabled={!p.available && !hasKey}
+                aria-pressed={isActive}
                 className={cn(
-                  "flex items-center gap-2 border-r border-line px-4 py-3 font-display text-xs uppercase tracking-widest transition",
+                  "flex min-h-11 items-center gap-2 border-r border-line px-4 py-3 font-display text-xs uppercase tracking-widest transition-colors duration-150 ease-out max-sm:nth-[n+3]:border-t",
+                  FOCUS_INSET,
                   isActive
                     ? "bg-accent/10 text-accent"
                     : "text-text-muted hover:bg-surface hover:text-text",
@@ -260,12 +266,15 @@ function BackupSection() {
     try {
       const text = await file.text();
       const summary: ImportSummary = await importBundle(text);
+      const counts = {
+        campaigns: summary.campaigns,
+        characters: summary.characters,
+        messages: summary.messages,
+      };
       setFeedback(
-        t("settings.backup.imported", {
-          campaigns: summary.campaigns,
-          characters: summary.characters,
-          messages: summary.messages,
-        }),
+        summary.skipped.length > 0
+          ? t("settings.backup.importedSkipped", { ...counts, skipped: summary.skipped.length })
+          : t("settings.backup.imported", counts),
       );
     } catch (err) {
       setFeedback(
@@ -293,7 +302,7 @@ function BackupSection() {
             type="button"
             onClick={onExport}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-md border border-accent-muted/60 bg-accent/15 px-3 py-2 font-display text-[11px] uppercase tracking-widest text-accent transition hover:bg-accent/25 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md border border-accent-muted/60 bg-accent/15 px-3 py-2 font-display text-xs uppercase tracking-widest text-accent transition hover:bg-accent/25 disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />
             {t("settings.backup.exportButton")}
@@ -302,7 +311,7 @@ function BackupSection() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 font-display text-[11px] uppercase tracking-widest text-text-muted transition hover:border-accent-muted hover:text-text disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 font-display text-xs uppercase tracking-widest text-text-muted transition hover:border-accent-muted hover:text-text disabled:opacity-50"
           >
             <Upload className="h-3.5 w-3.5" />
             {t("settings.backup.importButton")}
@@ -320,7 +329,9 @@ function BackupSection() {
         </div>
       </div>
       {feedback && (
-        <p className="mt-3 font-mono text-[11px] text-text-muted/80">{feedback}</p>
+        <p role="status" className="mt-3 font-mono text-xs text-text-muted/80">
+          {feedback}
+        </p>
       )}
     </section>
   );
@@ -352,6 +363,7 @@ function ProviderPanel({
   const [reveal, setReveal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const uid = useId();
 
   useEffect(() => {
     setKeyInput("");
@@ -376,7 +388,7 @@ function ProviderPanel({
     return (
       <div className="space-y-2 text-sm text-text-muted">
         <p>{t(`providers.${provider.id}.blurb`)}</p>
-        <p className="text-xs italic text-text-muted/60">
+        <p className="text-xs italic text-text-muted/80">
           {t("settings.notWired")}
         </p>
       </div>
@@ -428,15 +440,19 @@ function ProviderPanel({
 
       {provider.defaultBaseUrl && (
         <div>
-          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+          <label
+            htmlFor={`${uid}-url`}
+            className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted"
+          >
             {t("settings.baseUrlLabel")}
           </label>
           <input
+            id={`${uid}-url`}
             type="text"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={provider.defaultBaseUrl}
-            className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+            className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-base text-text focus:border-accent-muted sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
             autoComplete="off"
             spellCheck={false}
           />
@@ -445,12 +461,16 @@ function ProviderPanel({
 
       {provider.requiresKey ? (
         <div>
-          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+          <label
+            htmlFor={`${uid}-key`}
+            className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted"
+          >
             {t("settings.apiKeyLabel")}
           </label>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <input
+                id={`${uid}-key`}
                 type={reveal ? "text" : "password"}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
@@ -459,15 +479,16 @@ function ProviderPanel({
                     ? `${existing.key.slice(0, 6)}…${existing.key.slice(-4)}`
                     : provider.keyPrefix
                 }
-                className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 pr-10 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+                className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 pr-10 font-mono text-base text-text focus:border-accent-muted sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
                 autoComplete="off"
                 spellCheck={false}
               />
               <button
                 type="button"
                 onClick={() => setReveal((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-                tabIndex={-1}
+                aria-label={reveal ? t("settings.hideKey") : t("settings.showKey")}
+                aria-pressed={reveal}
+                className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-text-muted transition-colors duration-150 ease-out hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -488,11 +509,15 @@ function ProviderPanel({
 
       {(provider.models || provider.customModel) && (
         <div>
-          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+          <label
+            htmlFor={provider.models ? `${uid}-model-select` : `${uid}-model`}
+            className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted"
+          >
             {t("settings.modelLabel")}
           </label>
           {provider.models && (
             <select
+              id={`${uid}-model-select`}
               value={selectValue}
               onChange={(e) => {
                 if (e.target.value === CUSTOM_MODEL) {
@@ -503,7 +528,7 @@ function ProviderPanel({
                   setModel(e.target.value);
                 }
               }}
-              className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none"
+              className="w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-base text-text focus:border-accent-muted sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
             >
               {provider.models.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -517,12 +542,14 @@ function ProviderPanel({
           )}
           {showCustomInput && (
             <input
+              id={`${uid}-model`}
               type="text"
               value={model}
+              aria-label={provider.models ? t("settings.modelLabel") : undefined}
               onChange={(e) => setModel(e.target.value)}
               placeholder={provider.defaultModel ?? t("settings.customModelPlaceholder")}
               className={cn(
-                "w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-sm text-text focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted",
+                "w-full rounded-md border border-line bg-surface-elevated px-3 py-2 font-mono text-base text-text focus:border-accent-muted sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas",
                 provider.models && "mt-2",
               )}
               autoComplete="off"
@@ -554,12 +581,12 @@ function ProviderPanel({
             <button
               type="button"
               onClick={() => setActiveProvider(provider.id)}
-              className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-surface-elevated px-3 py-1 font-display text-[11px] uppercase tracking-widest text-text-muted hover:text-text"
+              className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-surface-elevated px-3 py-1 font-display text-xs uppercase tracking-widest text-text-muted hover:text-text"
             >
               {t("settings.makeActive")}
             </button>
           ) : (
-            <span className="ml-auto flex items-center gap-1.5 rounded-md border border-accent-muted/60 bg-accent/10 px-3 py-1 font-display text-[11px] uppercase tracking-widest text-accent">
+            <span className="ml-auto flex items-center gap-1.5 rounded-md border border-accent-muted/60 bg-accent/10 px-3 py-1 font-display text-xs uppercase tracking-widest text-accent">
               <Check className="h-3.5 w-3.5" />
               {t("settings.activeProvider")}
             </span>
@@ -567,7 +594,7 @@ function ProviderPanel({
           <button
             type="button"
             onClick={onRemove}
-            className="flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-1 font-display text-[11px] uppercase tracking-widest text-danger/90 hover:bg-danger/15"
+            className="flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-1 font-display text-xs uppercase tracking-widest text-danger/90 hover:bg-danger/15"
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t("common.remove")}
@@ -576,10 +603,12 @@ function ProviderPanel({
       )}
 
       {feedback && (
-        <p className="font-mono text-xs text-text-muted/70">{feedback}</p>
+        <p role="status" className="font-mono text-xs text-text-muted/80">
+          {feedback}
+        </p>
       )}
 
-      <p className="text-xs leading-relaxed text-text-muted/70">
+      <p className="text-xs leading-relaxed text-text-muted/80">
         {t("settings.endpointHelp", {
           endpoint: provider.defaultBaseUrl
             ? hostOf(baseUrl || provider.defaultBaseUrl)

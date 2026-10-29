@@ -26,9 +26,9 @@ export function WizardCard({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-pressed={selected ? true : undefined}
+      aria-pressed={!!selected}
       className={cn(
-        "group relative w-full rounded-md border bg-surface p-4 text-left transition",
+        "group relative w-full rounded-md border bg-surface p-4 text-left transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas",
         interactive && "cursor-pointer hover:border-accent-muted hover:bg-surface-elevated",
         selected
           ? "border-accent shadow-[0_0_0_1px_rgba(212,175,55,0.5),0_0_24px_-8px_rgba(212,175,55,0.6)]"

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Dices, Send, Sword, Zap, Flag } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "@/state/sessionStore";
@@ -8,6 +8,9 @@ import { newId } from "@/lib/id";
 import { useT } from "@/i18n";
 import type { ChatMessage } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
+
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas";
 
 interface ActionBarProps {
   onSubmit: (text: string) => Promise<void> | void;
@@ -20,6 +23,7 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
   const appendMessage = useSessionStore((s) => s.appendMessage);
   const streaming = useSessionStore((s) => s.streaming);
   const thinking = useSessionStore((s) => s.thinking);
+  const storeBusy = useSessionStore((s) => s.busy);
   const encounter = useSessionStore((s) => s.encounter);
   const { actionEconomy, consumeAction, resetActionEconomy } = useSessionStore(
     useShallow((s) => ({
@@ -35,8 +39,15 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
     bonus: boolean;
   }>({ action: false, bonus: false });
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const diceTriggerRef = useRef<HTMLButtonElement>(null);
+  const diceTrayId = useId();
+  // Synchronous guard: Cmd/Ctrl+Enter can fire twice before React re-renders
+  // with the cleared textarea or the store's `busy` flag.
+  const submittingRef = useRef(false);
 
-  const busy = !!disabled || streaming || thinking;
+  // The textarea stays editable while the DM answers (you can draft your next
+  // move); only submitting is gated on the DM turn being idle.
+  const busy = !!disabled || storeBusy || streaming || thinking;
   const inCombat = !!encounter;
 
   function appendTagged(slot: "action" | "bonus", label: string) {
@@ -59,7 +70,8 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
 
   async function handleSubmit() {
     const text = value.trim();
-    if (!text || busy || !campaignId) return;
+    if (!text || busy || !campaignId || submittingRef.current) return;
+    submittingRef.current = true;
     setValue("");
     if (inCombat) {
       if (pendingSlots.action) consumeAction("action");
@@ -76,13 +88,18 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
       diceRollIds: [],
       ts,
     };
-    await appendMessage(playerMsg);
-    await onSubmit(text);
+    try {
+      await appendMessage(playerMsg);
+      await onSubmit(text);
+    } finally {
+      submittingRef.current = false;
+    }
     requestAnimationFrame(() => taRef.current?.focus());
   }
 
   async function handleFinishTurn() {
-    if (busy || !campaignId) return;
+    if (busy || !campaignId || submittingRef.current) return;
+    submittingRef.current = true;
     const remainder = value.trim();
     setValue("");
     setPendingSlots({ action: false, bonus: false });
@@ -99,8 +116,12 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
       diceRollIds: [],
       ts,
     };
-    await appendMessage(playerMsg);
-    await runDmTurn({ playerInput: content, isFirstTurn: false });
+    try {
+      await appendMessage(playerMsg);
+      await runDmTurn({ playerInput: content, isFirstTurn: false });
+    } finally {
+      submittingRef.current = false;
+    }
     requestAnimationFrame(() => taRef.current?.focus());
   }
 
@@ -150,19 +171,28 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
           </div>
           <div className="relative">
             <button
+              ref={diceTriggerRef}
               type="button"
               onClick={() => setDiceOpen((v) => !v)}
+              aria-expanded={diceOpen}
+              aria-controls={diceTrayId}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border px-3 py-1 font-display text-[10px] uppercase tracking-widest transition",
+                "flex min-h-9 items-center gap-1.5 rounded-md border px-3 py-1 font-display text-[10px] uppercase tracking-widest transition-colors duration-150 ease-out active:scale-[0.97]",
+                FOCUS,
                 diceOpen
                   ? "border-accent bg-accent/15 text-accent"
                   : "border-line bg-surface text-text-muted hover:border-accent-muted hover:text-accent",
               )}
             >
-              <Dices className="h-3.5 w-3.5" />
+              <Dices className="h-3.5 w-3.5" aria-hidden="true" />
               {t("play.diceButton")}
             </button>
-            <DiceTray open={diceOpen} onClose={() => setDiceOpen(false)} />
+            <DiceTray
+              id={diceTrayId}
+              open={diceOpen}
+              onClose={() => setDiceOpen(false)}
+              triggerRef={diceTriggerRef}
+            />
           </div>
         </div>
 
@@ -185,18 +215,25 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
                   : t("play.actionPlaceholder")
             }
             rows={2}
-            disabled={busy}
-            className="flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-sm leading-relaxed text-text placeholder:text-text-muted/40 focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted disabled:opacity-60"
+            aria-label={t("play.actionLabel")}
+            className={cn(
+              "flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-base leading-relaxed text-text placeholder:text-text-muted/60 focus:border-accent-muted sm:text-sm",
+              FOCUS,
+            )}
           />
           <div className="flex flex-col gap-1.5">
             <button
               type="button"
               onClick={handleSubmit}
               disabled={busy || value.trim().length === 0}
-              className="flex h-10 w-10 items-center justify-center rounded-md border border-accent-muted/60 bg-accent/15 text-accent transition hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40"
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-md border border-accent-muted/60 bg-accent/15 text-accent transition-colors duration-150 ease-out hover:bg-accent/25 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40",
+                FOCUS,
+              )}
               title={t("play.sendTitle")}
+              aria-label={t("play.sendTitle")}
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-4 w-4" aria-hidden="true" />
             </button>
             {inCombat && (
               <button
@@ -231,7 +268,10 @@ function QuickAction({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-sm border border-line bg-surface px-2 py-0.5 font-mono text-[10px] text-text-muted transition hover:border-accent-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+      className={cn(
+        "min-h-9 rounded-md border border-line bg-surface px-3 font-body text-xs text-text-muted transition-colors duration-150 ease-out hover:border-accent-muted hover:text-text active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40",
+        FOCUS,
+      )}
     >
       {label}
     </button>
@@ -259,9 +299,10 @@ function AmmoChip({ icon, label, used, pending, onClick, disabled }: AmmoChipPro
       onClick={onClick}
       disabled={disabled || used}
       className={cn(
-        "flex items-center gap-2 rounded-md border px-2.5 py-1 font-display text-[10px] uppercase tracking-[0.25em] transition",
+        "flex min-h-9 items-center gap-2 rounded-md border px-2.5 py-1 font-display text-[10px] uppercase tracking-[0.25em] transition-colors duration-150 ease-out",
+        FOCUS,
         used
-          ? "border-line/60 bg-surface text-text-muted/40"
+          ? "border-line/60 bg-surface text-text-muted/80"
           : pending
             ? "border-accent bg-accent/20 text-accent shadow-[0_0_12px_-2px_rgba(212,175,55,0.5)]"
             : "border-line bg-surface text-text hover:border-accent-muted",
@@ -280,7 +321,7 @@ function Pip({ used, pending }: { used: boolean; pending: boolean }) {
     return (
       <span
         aria-hidden
-        className="inline-block h-2 w-2 rounded-full border border-text-muted/40"
+        className="inline-block h-2 w-2 rounded-full border border-text-muted/80"
       />
     );
   }

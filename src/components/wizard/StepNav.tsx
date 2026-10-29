@@ -32,17 +32,18 @@ export function StepNav({ isStepValid }: StepNavProps) {
               <button
                 type="button"
                 onClick={() => reachable && setStep(step)}
+                aria-current={isCurrent ? "step" : undefined}
                 disabled={!reachable}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                   isCurrent && "bg-accent/10 text-accent",
                   !isCurrent && reachable && "text-text-muted hover:bg-surface hover:text-text",
-                  !reachable && "cursor-not-allowed text-text-muted/40",
+                  !reachable && "cursor-not-allowed text-text-muted/60",
                 )}
               >
                 <span
                   className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-mono",
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-mono",
                     isCurrent && "border-accent bg-accent/20 text-accent",
                     isPast && valid && "border-accent-muted/60 bg-accent/5 text-accent",
                     isPast && !valid && "border-danger/60 text-danger",

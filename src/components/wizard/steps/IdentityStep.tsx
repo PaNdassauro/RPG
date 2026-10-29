@@ -17,32 +17,40 @@ export function IdentityStep() {
 
       <div className="space-y-6">
         <div>
-          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+          <label
+            htmlFor="identity-name"
+            className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted"
+          >
             {t("wizard.identityStep.nameLabel")}
           </label>
           <input
+            id="identity-name"
             type="text"
             value={identity.name}
             onChange={(e) => setIdentity({ name: e.target.value })}
             placeholder={t("wizard.identityStep.namePlaceholder")}
             maxLength={60}
-            className="w-full rounded-md border border-line bg-surface px-4 py-3 font-display text-lg text-text placeholder:text-text-muted/40 focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+            className="w-full rounded-md border border-line bg-surface px-4 py-3 font-display text-lg text-text placeholder:text-text-muted/60 focus:border-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
           />
         </div>
 
         <div>
-          <label className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted">
+          <label
+            htmlFor="identity-bio"
+            className="mb-2 block font-display text-xs uppercase tracking-[0.3em] text-text-muted"
+          >
             {t("wizard.identityStep.bioLabel")}
           </label>
           <textarea
+            id="identity-bio"
             value={identity.bio}
             onChange={(e) => setIdentity({ bio: e.target.value })}
             placeholder={t("wizard.identityStep.bioPlaceholder")}
             rows={4}
             maxLength={2000}
-            className="w-full resize-none rounded-md border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-text placeholder:text-text-muted/40 focus:border-accent-muted focus:outline-none focus:ring-1 focus:ring-accent-muted"
+            className="w-full resize-none rounded-md border border-line bg-surface px-4 py-3 text-base leading-relaxed text-text sm:text-sm placeholder:text-text-muted/60 focus:border-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
           />
-          <p className="mt-1 text-right font-mono text-[10px] text-text-muted/60">
+          <p className="mt-1 text-right font-mono text-xs text-text-muted/80">
             {identity.bio.length} / 2000
           </p>
         </div>

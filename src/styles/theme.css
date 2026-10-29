@@ -74,3 +74,18 @@
 @utility ring-accent {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 60%, transparent);
 }
+
+/* Reduced motion: CSS transitions and keyframes collapse to an instant state
+   change (framer-motion is handled by <MotionConfig reducedMotion="user">).
+   Spinners are exempt: they signal "working", not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *:not(.animate-spin)::before,
+  *:not(.animate-spin)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

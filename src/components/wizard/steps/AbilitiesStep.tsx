@@ -89,7 +89,7 @@ function StandardArrayMode() {
             className={cn(
               "rounded-md border px-3 py-1 font-mono text-base",
               usedSlots.has(idx)
-                ? "border-line bg-surface text-text-muted/40 line-through"
+                ? "border-line bg-surface text-text-muted/60 line-through"
                 : "border-accent-muted/60 bg-accent/10 text-accent",
             )}
           >
@@ -110,6 +110,7 @@ function StandardArrayMode() {
               <span className="font-display text-sm text-text">{ABILITY_LABEL[a]}</span>
               <div className="flex items-center gap-2">
                 <select
+                  aria-label={ABILITY_LABEL[a]}
                   value={slot ?? ""}
                   onChange={(e) =>
                     setAssignment(
@@ -117,7 +118,7 @@ function StandardArrayMode() {
                       e.target.value === "" ? null : Number(e.target.value),
                     )
                   }
-                  className="rounded-md border border-line bg-surface-elevated px-3 py-1 font-mono text-sm text-text focus:border-accent-muted focus:outline-none"
+                  className="rounded-md border border-line bg-surface-elevated px-3 py-1 font-mono text-base text-text focus:border-accent-muted sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
                 >
                   <option value="">—</option>
                   {STANDARD_ARRAY.map((arrayValue, idx) => {
@@ -178,7 +179,7 @@ function PointBuyMode() {
             >
               <div>
                 <p className="font-display text-sm text-text">{ABILITY_LABEL[a]}</p>
-                <p className="font-mono text-[10px] text-text-muted">
+                <p className="font-mono text-xs text-text-muted">
                   {t("wizard.abilitiesStep.pointBuyCost", { n: cost })}
                 </p>
               </div>
@@ -297,7 +298,7 @@ function ManualRollMode() {
                   className={cn(
                     "rounded-md border px-3 py-1 font-mono text-base",
                     used
-                      ? "border-line bg-surface text-text-muted/40"
+                      ? "border-line bg-surface text-text-muted/60"
                       : "border-accent-muted/60 bg-accent/10 text-accent",
                   )}
                 >
@@ -318,11 +319,12 @@ function ManualRollMode() {
             <span className="font-display text-sm text-text">{ABILITY_LABEL[a]}</span>
             <input
               type="number"
+              aria-label={ABILITY_LABEL[a]}
               min={3}
               max={20}
               value={scores[a]}
               onChange={(e) => setScore(a, Math.max(3, Math.min(20, Number(e.target.value) || 0)))}
-              className="w-16 rounded-md border border-line bg-surface-elevated px-2 py-1 text-right font-mono text-base text-text focus:border-accent-muted focus:outline-none"
+              className="w-16 rounded-md border border-line bg-surface-elevated px-2 py-1 text-right font-mono text-base text-text focus:border-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas"
             />
           </div>
         ))}

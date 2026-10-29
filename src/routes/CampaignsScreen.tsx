@@ -154,7 +154,7 @@ function CampaignCard({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted">
+          <p className="font-mono text-xs uppercase tracking-[0.3em] text-text-muted">
             {getWorld().name}
           </p>
           <h3 className="mt-0.5 truncate font-display text-lg text-text">
@@ -172,7 +172,7 @@ function CampaignCard({
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-text-muted">
         <div>
-          <p className="font-display text-[9px] uppercase tracking-[0.3em] text-text-muted/70">
+          <p className="font-display text-[10px] uppercase tracking-[0.3em] text-text-muted/80">
             {t("campaigns.locationLabel")}
           </p>
           <p className="mt-0.5 truncate text-text">
@@ -180,10 +180,10 @@ function CampaignCard({
           </p>
         </div>
         <div>
-          <p className="font-display text-[9px] uppercase tracking-[0.3em] text-text-muted/70">
+          <p className="font-display text-[10px] uppercase tracking-[0.3em] text-text-muted/80">
             {t("campaigns.lastPlayed", { when: lastPlayed })}
           </p>
-          <p className="mt-0.5 truncate font-mono text-[11px]">
+          <p className="mt-0.5 truncate font-mono text-xs">
             {t("campaigns.messageCount", { count: messageCount })}
           </p>
         </div>

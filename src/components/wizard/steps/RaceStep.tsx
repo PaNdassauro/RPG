@@ -58,13 +58,13 @@ export function RaceStep() {
                   {r.ability_bonuses.map((b, i) => (
                     <span
                       key={i}
-                      className="rounded-sm border border-accent-muted/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent"
+                      className="rounded-sm border border-accent-muted/40 bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent"
                     >
                       {b.ability_score.name} +{b.bonus}
                     </span>
                   ))}
                   {r.ability_bonus_options && (
-                    <span className="rounded-sm border border-accent-muted/30 bg-accent/5 px-1.5 py-0.5 font-mono text-[10px] text-accent-muted">
+                    <span className="rounded-sm border border-accent-muted/30 bg-accent/5 px-1.5 py-0.5 font-mono text-xs text-accent-muted">
                       {t("wizard.raceStep.choiceTag", { count: r.ability_bonus_options.choose })}
                     </span>
                   )}

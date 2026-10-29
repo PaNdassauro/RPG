@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, Sparkles, Search } from "lucide-react";
+import { Sparkles, Search } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
 import { useT } from "@/i18n";
 import { spellsForClass } from "@/data/srd/lazy";
@@ -8,6 +7,8 @@ import { getClassLevel } from "@/data/srd";
 import type { SrdSpell } from "@/data/srd/types";
 import { spellcasting } from "@/state/sheetDerived";
 import { cn } from "@/lib/cn";
+import { Dialog, DialogTitle } from "@/components/ui/Dialog";
+import { CloseButton } from "@/components/ui/CloseButton";
 
 interface SpellPickerProps {
   open: boolean;
@@ -141,98 +142,99 @@ export function SpellPicker({ open, onClose }: SpellPickerProps) {
     onClose();
   }
 
-  if (!open) return null;
-  if (!character || !primaryClass || (!caps.cantripsKnown && !caps.spellsKnown)) {
-    // Non-caster or class with no L1 spellcasting (paladin/ranger at L1) — surface a friendly message.
-    return (
-      <Backdrop onClose={onClose}>
-        <p className="text-sm text-text-muted">
-          {t("play.spellPicker.notACaster")}
-        </p>
-      </Backdrop>
-    );
-  }
+  const isCaster =
+    !!character && !!primaryClass && (caps.cantripsKnown > 0 || caps.spellsKnown > 0);
 
   return (
-    <Backdrop onClose={onClose}>
-      <header className="flex items-center justify-between border-b border-line/60 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-accent" />
-          <p className="font-display text-base text-text">
-            {t("play.spellPicker.title")}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted hover:border-accent-muted hover:text-text"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </header>
-      <div className="border-b border-line/40 px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Search className="h-3.5 w-3.5 text-text-muted" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("play.spellPicker.searchPlaceholder")}
-            className="flex-1 bg-transparent text-sm text-text placeholder:text-text-muted/40 focus:outline-none"
-          />
-          <span className="font-mono text-[10px] text-text-muted">
-            {pickedCantrips.size}/{caps.cantripsKnown} · {pickedSpells.size}/{caps.spellsKnown}
-          </span>
-        </div>
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 text-sm">
-        {loading ? (
-          <p className="text-text-muted">{t("play.spellPicker.loading")}</p>
-        ) : (
-          <>
-            {caps.cantripsKnown > 0 && (
-              <SpellGroup
-                title={t("play.spellPicker.cantripsHeading", {
-                  picked: pickedCantrips.size,
-                  cap: caps.cantripsKnown,
-                })}
-                spells={cantrips}
-                picked={pickedCantrips}
-                onToggle={toggleCantrip}
-                atCap={pickedCantrips.size >= caps.cantripsKnown}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      ariaLabel={isCaster ? undefined : t("play.spellPicker.title")}
+      className="max-h-[85dvh] max-w-2xl"
+    >
+      {isCaster ? (
+        <>
+          <header className="flex items-center justify-between border-b border-line/60 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-accent" />
+              <DialogTitle className="font-display text-base text-text">
+                {t("play.spellPicker.title")}
+              </DialogTitle>
+            </div>
+            <CloseButton onClick={onClose} />
+          </header>
+          <div className="border-b border-line/40 px-5 py-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-3.5 w-3.5 text-text-muted" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("play.spellPicker.searchPlaceholder")}
+                aria-label={t("play.spellPicker.searchPlaceholder")}
+                className="flex-1 rounded-sm bg-transparent text-base text-text placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas sm:text-sm"
               />
+              <span className="font-mono text-xs text-text-muted">
+                {pickedCantrips.size}/{caps.cantripsKnown} · {pickedSpells.size}/{caps.spellsKnown}
+              </span>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 text-sm">
+            {loading ? (
+              <p className="text-text-muted">{t("play.spellPicker.loading")}</p>
+            ) : (
+              <>
+                {caps.cantripsKnown > 0 && (
+                  <SpellGroup
+                    title={t("play.spellPicker.cantripsHeading", {
+                      picked: pickedCantrips.size,
+                      cap: caps.cantripsKnown,
+                    })}
+                    spells={cantrips}
+                    picked={pickedCantrips}
+                    onToggle={toggleCantrip}
+                    atCap={pickedCantrips.size >= caps.cantripsKnown}
+                  />
+                )}
+                {caps.spellsKnown > 0 && (
+                  <SpellGroup
+                    title={t("play.spellPicker.spellsHeading", {
+                      picked: pickedSpells.size,
+                      cap: caps.spellsKnown,
+                    })}
+                    spells={leveled}
+                    picked={pickedSpells}
+                    onToggle={toggleSpell}
+                    atCap={pickedSpells.size >= caps.spellsKnown}
+                  />
+                )}
+              </>
             )}
-            {caps.spellsKnown > 0 && (
-              <SpellGroup
-                title={t("play.spellPicker.spellsHeading", {
-                  picked: pickedSpells.size,
-                  cap: caps.spellsKnown,
-                })}
-                spells={leveled}
-                picked={pickedSpells}
-                onToggle={toggleSpell}
-                atCap={pickedSpells.size >= caps.spellsKnown}
-              />
-            )}
-          </>
-        )}
-      </div>
-      <footer className="flex items-center justify-end gap-2 border-t border-line/60 bg-surface/95 px-5 py-3">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-line bg-surface px-4 py-2 font-display text-[11px] uppercase tracking-widest text-text-muted hover:border-accent-muted hover:text-text"
-        >
-          {t("common.cancel")}
-        </button>
-        <button
-          type="button"
-          onClick={onSave}
-          className="rounded-md border border-accent bg-accent/15 px-4 py-2 font-display text-[11px] uppercase tracking-widest text-accent hover:bg-accent/25"
-        >
-          {t("play.spellPicker.save")}
-        </button>
-      </footer>
-    </Backdrop>
+          </div>
+          <footer className="flex items-center justify-end gap-2 border-t border-line/60 bg-surface/95 px-5 py-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-line bg-surface px-4 py-2 font-display text-xs uppercase tracking-widest text-text-muted hover:border-accent-muted hover:text-text"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              className="rounded-md border border-accent bg-accent/15 px-4 py-2 font-display text-xs uppercase tracking-widest text-accent hover:bg-accent/25"
+            >
+              {t("play.spellPicker.save")}
+            </button>
+          </footer>
+        </>
+      ) : (
+        // Non-caster, or a class with no L1 spellcasting (paladin/ranger at L1).
+        <div className="flex items-start justify-between gap-3 px-5 py-4">
+          <p className="text-sm text-text-muted">{t("play.spellPicker.notACaster")}</p>
+          <CloseButton onClick={onClose} />
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -265,6 +267,7 @@ function SpellGroup({
                 type="button"
                 disabled={lock}
                 onClick={() => onToggle(s.index)}
+                aria-pressed={isPicked}
                 className={cn(
                   "flex w-full items-start justify-between gap-3 rounded-md border px-3 py-2 text-left transition",
                   isPicked
@@ -277,21 +280,21 @@ function SpellGroup({
                   <p className="font-display text-sm">
                     {s.name}
                     {s.concentration && (
-                      <span className="ml-2 font-mono text-[10px] text-accent-muted">
+                      <span className="ml-2 font-mono text-xs text-accent-muted">
                         · concentration
                       </span>
                     )}
                     {s.ritual && (
-                      <span className="ml-1 font-mono text-[10px] text-accent-muted">
+                      <span className="ml-1 font-mono text-xs text-accent-muted">
                         · ritual
                       </span>
                     )}
                   </p>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted/70">
+                  <p className="mt-0.5 font-mono text-xs uppercase tracking-widest text-text-muted/80">
                     {s.school.name} · {s.casting_time} · {s.range} · {s.duration}
                   </p>
                   {s.desc?.[0] && (
-                    <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-text-muted">
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-muted">
                       {s.desc[0]}
                     </p>
                   )}
@@ -310,35 +313,5 @@ function SpellGroup({
         })}
       </ul>
     </section>
-  );
-}
-
-function Backdrop({
-  onClose,
-  children,
-}: {
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/80 backdrop-blur-[2px] px-4"
-      >
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 12 }}
-          onClick={(e) => e.stopPropagation()}
-          className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-md border border-line bg-surface shadow-[0_24px_60px_-12px_rgba(0,0,0,0.65)]"
-        >
-          {children}
-        </motion.section>
-      </motion.div>
-    </AnimatePresence>
   );
 }

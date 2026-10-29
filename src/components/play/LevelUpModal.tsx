@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useRef, useState } from "react";
 import { Sparkles, ChevronRight } from "lucide-react";
-import { useSessionStore } from "@/state/sessionStore";
+import { useSessionStore, type PendingLevelUp } from "@/state/sessionStore";
 import { getClass, getSubclass } from "@/data/srd";
 import { FEATS } from "@/data/srd/feats";
 import {
   ABILITIES,
   abilityModifier,
   type Ability,
+  type Character,
 } from "@/schemas/character";
 import {
   averageHitDieGain,
@@ -18,6 +18,7 @@ import {
   isSubclassPickLevel,
 } from "@/state/sheetDerived";
 import { cn } from "@/lib/cn";
+import { Dialog, DialogTitle } from "@/components/ui/Dialog";
 
 const ABILITY_LABEL: Record<Ability, string> = {
   str: "Força",
@@ -110,6 +111,25 @@ function meetsMulticlass(
 export function LevelUpModal() {
   const pending = useSessionStore((s) => s.pendingLevelUp);
   const character = useSessionStore((s) => s.character);
+
+  // Keep the last pending level-up so the dialog can play its exit animation
+  // after the store clears it.
+  const last = useRef(pending);
+  if (pending) last.current = pending;
+  const shown = pending ?? last.current;
+  if (!shown || !character) return null;
+  return <LevelUpBody open={!!pending} pending={shown} character={character} />;
+}
+
+function LevelUpBody({
+  open,
+  pending,
+  character,
+}: {
+  open: boolean;
+  pending: PendingLevelUp;
+  character: Character;
+}) {
   const apply = useSessionStore((s) => s.applyLevelUp);
   const cancel = useSessionStore((s) => s.cancelLevelUp);
 
@@ -118,19 +138,9 @@ export function LevelUpModal() {
   const [applying, setApplying] = useState(false);
   const [chosenClassId, setChosenClassId] = useState<string | null>(null);
 
-  const open = !!pending && !!character;
-  if (!open || !pending || !character) {
-    return (
-      <AnimatePresence>
-        {/* placeholder so AnimatePresence doesn't choke between renders */}
-      </AnimatePresence>
-    );
-  }
-
   // Player can choose to level the DM-suggested class OR switch to multiclass.
   const effectiveClassId = chosenClassId ?? pending.classId;
   const klass = getClass(effectiveClassId);
-  if (!klass) return null;
 
   const currentClassEntry = character.classes.find((c) => c.classId === effectiveClassId);
   const isMulticlassPick = !currentClassEntry;
@@ -143,11 +153,12 @@ export function LevelUpModal() {
     !currentClassEntry?.subclassId && isSubclassPickLevel(effectiveClassId, newLevel);
   const subclassOptions = useMemo(
     () =>
-      klass.subclasses
+      (klass?.subclasses ?? [])
         .map((ref) => getSubclass(ref.index))
         .filter((s): s is NonNullable<typeof s> => !!s),
     [klass],
   );
+  if (!klass) return null;
   const features = featuresForClassLevel(effectiveClassId, newLevel);
   const conMod = abilityModifier(character.abilities.con);
   const hpGain = Math.max(1, averageHitDieGain(klass.hit_die, conMod));
@@ -210,267 +221,247 @@ export function LevelUpModal() {
   }
 
   return (
-    <AnimatePresence>
-      <motion.div
-        key="lu-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-canvas/85 backdrop-blur-sm p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          key="lu-card"
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.25, ease: [0.2, 0.8, 0.4, 1] }}
-          onClick={(e) => e.stopPropagation()}
-          className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-accent/40 bg-surface shadow-[0_0_80px_-20px_rgba(212,170,71,0.4)]"
-        >
-          <header className="border-b border-line/60 bg-canvas/40 px-6 py-5">
-            <p className="flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
-              <Sparkles className="h-3 w-3" />
-              Subindo de nível
-            </p>
-            <h2 className="mt-1 font-display text-2xl text-text">
-              {klass.name} · Nível {newLevel}
-            </h2>
-            <p className="mt-0.5 font-mono text-[11px] uppercase tracking-widest text-text-muted">
-              Total de personagem: {newTotalLevel}
-            </p>
-            {pending.narration && (
-              <p className="mt-3 max-w-prose text-sm leading-relaxed text-text-muted italic">
-                "{pending.narration}"
-              </p>
-            )}
-          </header>
+    <Dialog open={open} onClose={onClose} dismissible={!applying} className="max-w-xl">
+      <header className="border-b border-line/60 bg-canvas/40 px-6 py-5">
+        <p className="flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
+          <Sparkles className="h-3 w-3" />
+          Subindo de nível
+        </p>
+        <DialogTitle className="mt-1 font-display text-2xl text-text">
+          {klass.name} · Nível {newLevel}
+        </DialogTitle>
+        <p className="mt-0.5 font-mono text-xs uppercase tracking-widest text-text-muted">
+          Total de personagem: {newTotalLevel}
+        </p>
+        {pending.narration && (
+          <p className="mt-3 max-w-prose text-sm leading-relaxed text-text-muted italic">
+            "{pending.narration}"
+          </p>
+        )}
+      </header>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            {/* Class picker (multiclass) */}
-            <Section title="Classe a evoluir">
-              <div className="flex flex-wrap gap-1.5">
-                {ALL_CLASS_IDS.map((cid) => {
-                  const owned = character.classes.some((c) => c.classId === cid);
-                  const k = getClass(cid);
-                  if (!k) return null;
-                  const isSel = effectiveClassId === cid;
-                  const ok = owned || meetsMulticlass(character.abilities, cid);
-                  return (
-                    <button
-                      key={cid}
-                      type="button"
-                      onClick={() => setChosenClassId(cid)}
-                      disabled={!ok}
-                      className={cn(
-                        "rounded-md border px-2.5 py-1 font-display text-[10px] uppercase tracking-[0.2em] transition",
-                        isSel
-                          ? "border-accent bg-accent/15 text-accent"
-                          : owned
-                            ? "border-line bg-surface text-text hover:border-accent-muted"
-                            : ok
-                              ? "border-line/60 bg-surface text-text-muted hover:border-accent-muted"
-                              : "border-line/40 bg-surface/50 text-text-muted/30 cursor-not-allowed",
-                      )}
-                      title={
-                        !ok
-                          ? "Pré-requisito de multiclasse não atendido"
-                          : owned
-                            ? "Sua classe"
-                            : "Multiclasse"
-                      }
-                    >
-                      {k.name}
-                      {owned && (
-                        <span className="ml-1 text-text-muted">
-                          L{character.classes.find((c) => c.classId === cid)?.level ?? 0}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              {!meetsPrereqs && (
-                <p className="mt-2 text-[11px] text-danger/80">
-                  Atributos insuficientes para multiclasse em {klass.name}.
-                </p>
-              )}
-            </Section>
-
-            {/* HP gain */}
-            <Section title="Pontos de vida">
-              <p className="text-sm text-text">
-                <span className="font-mono text-accent">+{hpGain} PV</span>{" "}
-                <span className="text-text-muted">
-                  (média de d{klass.hit_die} = {Math.floor(klass.hit_die / 2) + 1} + CON{" "}
-                  {conMod >= 0 ? `+${conMod}` : conMod})
-                </span>
-              </p>
-              <p className="mt-1 text-[11px] text-text-muted/70">
-                Novo máximo: {character.hp.max} → {character.hp.max + hpGain}
-              </p>
-            </Section>
-
-            {/* ASI */}
-            {isAsi && (
-              <Section title="Aumento de atributo">
-                <p className="mb-2 text-xs text-text-muted">
-                  Escolha +2 em um atributo OU +1 em dois atributos diferentes (máx. 20).
-                </p>
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  <ModeButton
-                    active={asi.mode === "plusTwo"}
-                    onClick={() => setAsi({ ...EMPTY_ASI, mode: "plusTwo" })}
-                  >
-                    +2 num atributo
-                  </ModeButton>
-                  <ModeButton
-                    active={asi.mode === "plusOneTwice"}
-                    onClick={() => setAsi({ ...EMPTY_ASI, mode: "plusOneTwice" })}
-                  >
-                    +1 em dois
-                  </ModeButton>
-                  <ModeButton
-                    active={asi.mode === "feat"}
-                    onClick={() => setAsi({ ...EMPTY_ASI, mode: "feat" })}
-                  >
-                    Talento
-                  </ModeButton>
-                </div>
-                {asi.mode === "plusTwo" && (
-                  <AbilityPicker
-                    label=""
-                    abilities={character.abilities}
-                    selected={asi.plusTwoTarget}
-                    bonus={2}
-                    onPick={(a) => setAsi({ ...asi, plusTwoTarget: a })}
-                  />
-                )}
-                {asi.mode === "plusOneTwice" && (
-                  <div className="flex flex-col gap-3">
-                    <AbilityPicker
-                      label="Primeiro atributo (+1)"
-                      abilities={character.abilities}
-                      selected={asi.plusOneA}
-                      bonus={1}
-                      onPick={(a) => setAsi({ ...asi, plusOneA: a })}
-                      excluded={asi.plusOneB}
-                    />
-                    <AbilityPicker
-                      label="Segundo atributo (+1)"
-                      abilities={character.abilities}
-                      selected={asi.plusOneB}
-                      bonus={1}
-                      onPick={(a) => setAsi({ ...asi, plusOneB: a })}
-                      excluded={asi.plusOneA}
-                    />
-                  </div>
-                )}
-                {asi.mode === "feat" && (
-                  <FeatPicker
-                    selectedId={asi.featId}
-                    selectedChoice={asi.featChoice}
-                    alreadyOwned={character.feats.map((f) => f.featId)}
-                    onPick={(id) => setAsi({ ...asi, featId: id, featChoice: null })}
-                    onPickChoice={(ab) => setAsi({ ...asi, featChoice: ab })}
-                  />
-                )}
-              </Section>
-            )}
-
-            {/* Subclass picker */}
-            {needsSubclass && (
-              <Section title="Escolha sua subclasse">
-                <ul className="flex flex-col gap-2">
-                  {subclassOptions.map((sc) => (
-                    <li key={sc.index}>
-                      <button
-                        type="button"
-                        onClick={() => setSubclassId(sc.index)}
-                        className={cn(
-                          "flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition",
-                          subclassId === sc.index
-                            ? "border-accent bg-accent/10"
-                            : "border-line bg-surface hover:border-accent-muted/60",
-                        )}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "mt-0.5 h-3.5 w-3.5 shrink-0 transition",
-                            subclassId === sc.index ? "text-accent" : "text-text-muted",
-                          )}
-                        />
-                        <div>
-                          <p className="font-display text-sm text-text">{sc.name}</p>
-                          {sc.subclass_flavor && (
-                            <p className="text-[11px] text-text-muted">{sc.subclass_flavor}</p>
-                          )}
-                          {sc.desc[0] && (
-                            <p className="mt-1 text-[11px] leading-relaxed text-text-muted/80">
-                              {sc.desc[0]}
-                            </p>
-                          )}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            )}
-
-            {/* New features */}
-            {features.length > 0 && (
-              <Section title="Novos recursos">
-                <ul className="flex flex-col gap-2">
-                  {features.map((f) => (
-                    <li key={f.index} className="rounded-md border border-line/60 bg-surface px-3 py-2">
-                      <p className="font-display text-sm text-text">{f.name}</p>
-                      {f.desc.slice(0, 2).map((d, i) => (
-                        <p key={i} className="mt-1 text-[11px] leading-relaxed text-text-muted">
-                          {d}
-                        </p>
-                      ))}
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            )}
-
-            {/* Spellcasting delta */}
-            {lvlEntry?.spellcasting && (
-              <Section title="Conjuração">
-                <SpellcastingDelta level={newLevel} classId={effectiveClassId} />
-              </Section>
-            )}
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {/* Class picker (multiclass) */}
+        <Section title="Classe a evoluir">
+          <div className="flex flex-wrap gap-1.5">
+            {ALL_CLASS_IDS.map((cid) => {
+              const owned = character.classes.some((c) => c.classId === cid);
+              const k = getClass(cid);
+              if (!k) return null;
+              const isSel = effectiveClassId === cid;
+              const ok = owned || meetsMulticlass(character.abilities, cid);
+              return (
+                <button
+                  key={cid}
+                  type="button"
+                  onClick={() => setChosenClassId(cid)}
+                  disabled={!ok}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 font-display text-[10px] uppercase tracking-[0.2em] transition",
+                    isSel
+                      ? "border-accent bg-accent/15 text-accent"
+                      : owned
+                        ? "border-line bg-surface text-text hover:border-accent-muted"
+                        : ok
+                          ? "border-line/60 bg-surface text-text-muted hover:border-accent-muted"
+                          : "border-line/40 bg-surface/50 text-text-muted/60 cursor-not-allowed",
+                  )}
+                  title={
+                    !ok
+                      ? "Pré-requisito de multiclasse não atendido"
+                      : owned
+                        ? "Sua classe"
+                        : "Multiclasse"
+                  }
+                >
+                  {k.name}
+                  {owned && (
+                    <span className="ml-1 text-text-muted">
+                      L{character.classes.find((c) => c.classId === cid)?.level ?? 0}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+          {!meetsPrereqs && (
+            <p className="mt-2 text-xs text-danger/80">
+              Atributos insuficientes para multiclasse em {klass.name}.
+            </p>
+          )}
+        </Section>
 
-          <footer className="flex items-center justify-between border-t border-line/60 bg-canvas/30 px-6 py-3.5">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={applying}
-              className="font-display text-xs uppercase tracking-[0.3em] text-text-muted transition hover:text-text disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              disabled={!canConfirm}
-              className={cn(
-                "rounded-md border px-5 py-2 font-display text-xs uppercase tracking-[0.3em] transition",
-                canConfirm
-                  ? "border-accent bg-accent/15 text-accent hover:bg-accent/25"
-                  : "border-line bg-surface text-text-muted/40",
-              )}
-            >
-              {applying ? "Aplicando…" : "Confirmar"}
-            </button>
-          </footer>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        {/* HP gain */}
+        <Section title="Pontos de vida">
+          <p className="text-sm text-text">
+            <span className="font-mono text-accent">+{hpGain} PV</span>{" "}
+            <span className="text-text-muted">
+              (média de d{klass.hit_die} = {Math.floor(klass.hit_die / 2) + 1} + CON{" "}
+              {conMod >= 0 ? `+${conMod}` : conMod})
+            </span>
+          </p>
+          <p className="mt-1 text-xs text-text-muted/80">
+            Novo máximo: {character.hp.max} → {character.hp.max + hpGain}
+          </p>
+        </Section>
+
+        {/* ASI */}
+        {isAsi && (
+          <Section title="Aumento de atributo">
+            <p className="mb-2 text-xs text-text-muted">
+              Escolha +2 em um atributo OU +1 em dois atributos diferentes (máx. 20).
+            </p>
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              <ModeButton
+                active={asi.mode === "plusTwo"}
+                onClick={() => setAsi({ ...EMPTY_ASI, mode: "plusTwo" })}
+              >
+                +2 num atributo
+              </ModeButton>
+              <ModeButton
+                active={asi.mode === "plusOneTwice"}
+                onClick={() => setAsi({ ...EMPTY_ASI, mode: "plusOneTwice" })}
+              >
+                +1 em dois
+              </ModeButton>
+              <ModeButton
+                active={asi.mode === "feat"}
+                onClick={() => setAsi({ ...EMPTY_ASI, mode: "feat" })}
+              >
+                Talento
+              </ModeButton>
+            </div>
+            {asi.mode === "plusTwo" && (
+              <AbilityPicker
+                label=""
+                abilities={character.abilities}
+                selected={asi.plusTwoTarget}
+                bonus={2}
+                onPick={(a) => setAsi({ ...asi, plusTwoTarget: a })}
+              />
+            )}
+            {asi.mode === "plusOneTwice" && (
+              <div className="flex flex-col gap-3">
+                <AbilityPicker
+                  label="Primeiro atributo (+1)"
+                  abilities={character.abilities}
+                  selected={asi.plusOneA}
+                  bonus={1}
+                  onPick={(a) => setAsi({ ...asi, plusOneA: a })}
+                  excluded={asi.plusOneB}
+                />
+                <AbilityPicker
+                  label="Segundo atributo (+1)"
+                  abilities={character.abilities}
+                  selected={asi.plusOneB}
+                  bonus={1}
+                  onPick={(a) => setAsi({ ...asi, plusOneB: a })}
+                  excluded={asi.plusOneA}
+                />
+              </div>
+            )}
+            {asi.mode === "feat" && (
+              <FeatPicker
+                selectedId={asi.featId}
+                selectedChoice={asi.featChoice}
+                alreadyOwned={character.feats.map((f) => f.featId)}
+                onPick={(id) => setAsi({ ...asi, featId: id, featChoice: null })}
+                onPickChoice={(ab) => setAsi({ ...asi, featChoice: ab })}
+              />
+            )}
+          </Section>
+        )}
+
+        {/* Subclass picker */}
+        {needsSubclass && (
+          <Section title="Escolha sua subclasse">
+            <ul className="flex flex-col gap-2">
+              {subclassOptions.map((sc) => (
+                <li key={sc.index}>
+                  <button
+                    type="button"
+                    onClick={() => setSubclassId(sc.index)}
+                    className={cn(
+                      "flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition",
+                      subclassId === sc.index
+                        ? "border-accent bg-accent/10"
+                        : "border-line bg-surface hover:border-accent-muted/60",
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "mt-0.5 h-3.5 w-3.5 shrink-0 transition",
+                        subclassId === sc.index ? "text-accent" : "text-text-muted",
+                      )}
+                    />
+                    <div>
+                      <p className="font-display text-sm text-text">{sc.name}</p>
+                      {sc.subclass_flavor && (
+                        <p className="text-xs text-text-muted">{sc.subclass_flavor}</p>
+                      )}
+                      {sc.desc[0] && (
+                        <p className="mt-1 text-xs leading-relaxed text-text-muted/80">
+                          {sc.desc[0]}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* New features */}
+        {features.length > 0 && (
+          <Section title="Novos recursos">
+            <ul className="flex flex-col gap-2">
+              {features.map((f) => (
+                <li key={f.index} className="rounded-md border border-line/60 bg-surface px-3 py-2">
+                  <p className="font-display text-sm text-text">{f.name}</p>
+                  {f.desc.slice(0, 2).map((d, i) => (
+                    <p key={i} className="mt-1 text-xs leading-relaxed text-text-muted">
+                      {d}
+                    </p>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Spellcasting delta */}
+        {lvlEntry?.spellcasting && (
+          <Section title="Conjuração">
+            <SpellcastingDelta level={newLevel} classId={effectiveClassId} />
+          </Section>
+        )}
+      </div>
+
+      <footer className="flex items-center justify-between border-t border-line/60 bg-canvas/30 px-6 py-3.5">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={applying}
+          className="font-display text-xs uppercase tracking-[0.3em] text-text-muted transition hover:text-text disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!canConfirm}
+          className={cn(
+            "rounded-md border px-5 py-2 font-display text-xs uppercase tracking-[0.3em] transition",
+            canConfirm
+              ? "border-accent bg-accent/15 text-accent hover:bg-accent/25"
+              : "border-line bg-surface text-text-muted/60",
+          )}
+        >
+          {applying ? "Aplicando…" : "Confirmar"}
+        </button>
+      </footer>
+    </Dialog>
   );
 }
 
@@ -528,7 +519,7 @@ function AbilityPicker({
   return (
     <div>
       {label && (
-        <p className="mb-1.5 font-display text-[9px] uppercase tracking-widest text-text-muted">
+        <p className="mb-1.5 font-display text-[10px] uppercase tracking-widest text-text-muted">
           {label}
         </p>
       )}
@@ -555,7 +546,7 @@ function AbilityPicker({
                       : "border-line bg-surface hover:border-accent-muted/60",
                 )}
               >
-                <span className="font-display text-[9px] uppercase tracking-widest text-text-muted">
+                <span className="font-display text-[10px] uppercase tracking-widest text-text-muted">
                   {ABILITY_LABEL[a]}
                 </span>
                 <span className="font-mono text-sm text-text">
@@ -566,7 +557,7 @@ function AbilityPicker({
                     </span>
                   )}
                 </span>
-                <span className="text-[9px] font-mono uppercase tracking-widest text-text-muted/70">
+                <span className="text-xs font-mono uppercase tracking-widest text-text-muted/80">
                   {ABILITY_SHORT[a]}
                 </span>
               </button>
@@ -612,7 +603,7 @@ function FeatPicker({
               )}
             >
               <span className="font-display text-sm text-text">{f.name}</span>
-              <span className="text-[11px] leading-relaxed text-text-muted">
+              <span className="text-xs leading-relaxed text-text-muted">
                 {f.description}
               </span>
             </button>

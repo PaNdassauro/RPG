@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  X,
   Heart,
   Shield,
   Swords,
@@ -44,6 +43,8 @@ import type { SrdSpell } from "@/data/srd/types";
 import { SpellPicker } from "@/components/play/SpellPicker";
 import { newId } from "@/lib/id";
 import { useT } from "@/i18n";
+import { DialogTitle, Sheet } from "@/components/ui/Dialog";
+import { CloseButton } from "@/components/ui/CloseButton";
 import type { ChatMessage } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
 
@@ -107,52 +108,27 @@ export function CharacterSheet({ open, onClose, defaultTab }: Props) {
     if (open && defaultTab) setTab(defaultTab);
   }, [open, defaultTab]);
 
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [open, onClose]);
-
   if (!character) return null;
   const hasSpells = !!spellcasting(character);
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        aria-hidden={!open}
-        className={cn(
-          "fixed inset-0 z-40 bg-canvas/70 backdrop-blur-[2px] transition-opacity duration-200",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
-        )}
-      />
-      <aside
-        onClick={(e) => e.stopPropagation()}
-        aria-hidden={!open}
-        className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-full max-w-4xl flex-col border-l border-line bg-surface/95 shadow-[-12px_0_40px_-12px_rgba(0,0,0,0.6)] backdrop-blur transition-transform duration-300 ease-out",
-          open ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none",
-        )}
-      >
-        <Header character={character} onClose={onClose} />
-        <Tabs tab={tab} setTab={setTab} hasSpells={hasSpells} />
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {tab === "summary" && <SummaryTab character={character} />}
-          {tab === "skills" && <SkillsTab character={character} />}
-          {tab === "attacks" && <AttacksTab character={character} />}
-          {tab === "spells" && hasSpells && <SpellsTab character={character} />}
-          {tab === "gear" && <GearTab character={character} />}
-          {tab === "story" && <StoryTab character={character} />}
-        </div>
-      </aside>
-    </>
+    <Sheet open={open} onClose={onClose} side="right" className="w-full max-w-4xl">
+      <Header character={character} onClose={onClose} />
+      <Tabs tab={tab} setTab={setTab} hasSpells={hasSpells} />
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {tab === "summary" && <SummaryTab character={character} />}
+        {tab === "skills" && <SkillsTab character={character} />}
+        {tab === "attacks" && <AttacksTab character={character} />}
+        {tab === "spells" && hasSpells && <SpellsTab character={character} />}
+        {tab === "gear" && <GearTab character={character} />}
+        {tab === "story" && <StoryTab character={character} />}
+      </div>
+    </Sheet>
   );
 }
 
 function Header({ character, onClose }: { character: Character; onClose: () => void }) {
+  const t = useT();
   const race = character.raceId ? getRace(character.raceId) : null;
   const subrace = character.subraceId ? getSubrace(character.subraceId) : null;
   const klass = character.classes[0] ? getClass(character.classes[0].classId) : null;
@@ -162,20 +138,15 @@ function Header({ character, onClose }: { character: Character; onClose: () => v
   return (
     <header className="flex items-start justify-between border-b border-line/60 px-5 py-4">
       <div>
-        <p className="font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">Ficha</p>
-        <h2 className="mt-0.5 font-display text-xl text-text">{character.name}</h2>
+        <p className="font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">
+          {t("play.sheet.eyebrow")}
+        </p>
+        <DialogTitle className="mt-0.5 font-display text-xl text-text">{character.name}</DialogTitle>
         <p className="mt-1 text-xs text-text-muted">
-          {heritage} · {klass?.name ?? "—"} · Nível {level}
+          {heritage} · {klass?.name ?? "—"} · {t("play.sheet.level", { n: level })}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition hover:border-accent-muted hover:text-text"
-        aria-label="Fechar"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      <CloseButton onClick={onClose} />
     </header>
   );
 }
@@ -189,31 +160,33 @@ function Tabs({
   setTab: (t: Tab) => void;
   hasSpells: boolean;
 }) {
+  const t = useT();
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
-    { id: "summary", label: "Resumo", icon: <Heart className="h-3.5 w-3.5" />, show: true },
-    { id: "skills", label: "Habilidades", icon: <Shield className="h-3.5 w-3.5" />, show: true },
-    { id: "attacks", label: "Ataques", icon: <Swords className="h-3.5 w-3.5" />, show: true },
-    { id: "spells", label: "Magias", icon: <Sparkles className="h-3.5 w-3.5" />, show: hasSpells },
-    { id: "gear", label: "Equipamento", icon: <Backpack className="h-3.5 w-3.5" />, show: true },
-    { id: "story", label: "História", icon: <ScrollText className="h-3.5 w-3.5" />, show: true },
+    { id: "summary", label: t("play.sheet.tabs.summary"), icon: <Heart className="h-3.5 w-3.5" />, show: true },
+    { id: "skills", label: t("play.sheet.tabs.skills"), icon: <Shield className="h-3.5 w-3.5" />, show: true },
+    { id: "attacks", label: t("play.sheet.tabs.attacks"), icon: <Swords className="h-3.5 w-3.5" />, show: true },
+    { id: "spells", label: t("play.sheet.tabs.spells"), icon: <Sparkles className="h-3.5 w-3.5" />, show: hasSpells },
+    { id: "gear", label: t("play.sheet.tabs.gear"), icon: <Backpack className="h-3.5 w-3.5" />, show: true },
+    { id: "story", label: t("play.sheet.tabs.story"), icon: <ScrollText className="h-3.5 w-3.5" />, show: true },
   ];
   return (
     <div className="flex flex-wrap border-b border-line/60 px-3">
       {tabs
-        .filter((t) => t.show)
-        .map((t) => (
+        .filter((item) => item.show)
+        .map((item) => (
           <button
-            key={t.id}
+            key={item.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(item.id)}
+            aria-pressed={tab === item.id}
             className={cn(
-              "relative flex items-center gap-1.5 px-2.5 py-3 font-display text-[10px] uppercase tracking-[0.3em] transition",
-              tab === t.id ? "text-accent" : "text-text-muted hover:text-text",
+              "relative flex items-center gap-1.5 px-2.5 py-3 font-display text-[10px] uppercase tracking-[0.3em] transition-colors duration-150 ease-out",
+              tab === item.id ? "text-accent" : "text-text-muted hover:text-text",
             )}
           >
-            {t.icon}
-            {t.label}
-            {tab === t.id && (
+            {item.icon}
+            {item.label}
+            {tab === item.id && (
               <span className="absolute inset-x-1.5 -bottom-[1px] h-[2px] rounded-full bg-accent" />
             )}
           </button>
@@ -329,12 +302,12 @@ function FeatsList({ character }: { character: Character }) {
             <p className="font-display text-sm text-text">
               {data.name}
               {f.choice && (
-                <span className="ml-2 font-mono text-[10px] uppercase tracking-widest text-accent-muted">
+                <span className="ml-2 font-mono text-xs uppercase tracking-widest text-accent-muted">
                   ({f.choice.toUpperCase()})
                 </span>
               )}
             </p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-text-muted">
+            <p className="mt-0.5 text-xs leading-relaxed text-text-muted">
               {data.description}
             </p>
           </li>
@@ -379,7 +352,7 @@ function SkillsTab({ character }: { character: Character }) {
               <div className="flex items-center gap-2">
                 <ProfDot on={s.isProficient} expert={s.hasExpertise} />
                 <span className="font-display text-xs text-text">{SKILL_LABEL_PT[s.skill]}</span>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+                <span className="font-mono text-xs uppercase tracking-widest text-text-muted">
                   {ABILITY_SHORT[s.ability]}
                 </span>
               </div>
@@ -407,7 +380,7 @@ function AttacksTab({ character }: { character: Character }) {
           </ul>
         )}
       </Section>
-      <p className="text-[11px] leading-relaxed text-text-muted/70">
+      <p className="text-xs leading-relaxed text-text-muted/80">
         Os ataques são derivados das armas equipadas (aba Equipamento). Equipar uma arma do SRD faz
         ela aparecer aqui com to-hit e dano calculados.
       </p>
@@ -427,16 +400,16 @@ function AttackRow({ attack }: { attack: AttackEntry }) {
         <span className="font-display text-sm text-text">{attack.name}</span>
         <span className="font-mono text-base text-accent">{signed(attack.toHit)}</span>
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-text-muted">
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-text-muted">
         <span className="font-mono">{damageStr}</span>
-        <span className="text-text-muted/70">{rangeStr}</span>
+        <span className="text-text-muted/80">{rangeStr}</span>
       </div>
       {attack.properties.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
           {attack.properties.map((p) => (
             <span
               key={p}
-              className="rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-text-muted/80"
+              className="rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest text-text-muted/80"
             >
               {p}
             </span>
@@ -592,7 +565,7 @@ function SpellsTab({ character }: { character: Character }) {
 
       <Section title="Grimório">
         <div className="mb-2 flex items-center justify-between">
-          <p className="font-mono text-[11px] text-text-muted">
+          <p className="font-mono text-xs text-text-muted">
             Truques: {character.cantrips.length}/{sc.cantripsKnown ?? "—"} · Magias:{" "}
             {character.spellsKnown.length}/{sc.spellsKnown ?? "—"}
           </p>
@@ -610,7 +583,7 @@ function SpellsTab({ character }: { character: Character }) {
             <p className="font-display text-sm text-text">
               Sem magias selecionadas
             </p>
-            <p className="mt-1 text-[11px] text-text-muted">
+            <p className="mt-1 text-xs text-text-muted">
               Abra "Configurar magias" para escolher seus truques e magias conhecidas da
               lista da sua classe.
             </p>
@@ -670,22 +643,22 @@ function SpellRows({
                 <p className="font-display text-sm text-text">
                   {s.name}
                   {s.concentration && (
-                    <span className="ml-2 font-mono text-[9px] text-accent-muted">
+                    <span className="ml-2 font-mono text-xs text-accent-muted">
                       concentração
                     </span>
                   )}
                   {s.ritual && (
-                    <span className="ml-1 font-mono text-[9px] text-accent-muted">
+                    <span className="ml-1 font-mono text-xs text-accent-muted">
                       ritual
                     </span>
                   )}
                 </p>
-                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted/70">
+                <p className="mt-0.5 font-mono text-xs uppercase tracking-widest text-text-muted/80">
                   {s.level === 0 ? "truque" : `nível ${s.level}`} · {s.school.name.toLowerCase()} ·{" "}
                   {s.casting_time}
                 </p>
                 {s.desc?.[0] && (
-                  <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-text-muted">
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-muted">
                     {s.desc[0]}
                   </p>
                 )}
@@ -727,7 +700,7 @@ function SpellRows({
                     type="button"
                     onClick={() => onCast(s, "ritual")}
                     title="Conjurar como ritual (sem gastar espaço, +10 min)"
-                    className="rounded-md border border-line px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-text-muted transition hover:border-accent-muted hover:text-text"
+                    className="rounded-md border border-line px-2 py-0.5 font-mono text-xs uppercase tracking-widest text-text-muted transition hover:border-accent-muted hover:text-text"
                   >
                     Ritual
                   </button>
@@ -758,7 +731,7 @@ function GearTab({ character }: { character: Character }) {
               key={k}
               className="rounded-md border border-line/60 bg-surface px-2 py-1.5 text-center"
             >
-              <p className="font-display text-[9px] uppercase tracking-widest text-text-muted">
+              <p className="font-display text-[10px] uppercase tracking-widest text-text-muted">
                 {k.toUpperCase()}
               </p>
               <p className="mt-0.5 font-mono text-sm text-text">{currency[k]}</p>
@@ -766,7 +739,7 @@ function GearTab({ character }: { character: Character }) {
           ))}
         </ul>
         {character.goldPieces > 0 && currency.gp === 0 && (
-          <p className="mt-1 text-[11px] text-text-muted/70">
+          <p className="mt-1 text-xs text-text-muted/80">
             ({character.goldPieces} po em campo legado — migre pro currency.gp ao editar)
           </p>
         )}
@@ -810,13 +783,13 @@ function GearTab({ character }: { character: Character }) {
                   <p className="font-display text-sm text-text">
                     {item.name}
                     {item.qty > 1 && (
-                      <span className="ml-1 font-mono text-[10px] text-text-muted">
+                      <span className="ml-1 font-mono text-xs text-text-muted">
                         ×{item.qty}
                       </span>
                     )}
                   </p>
                   {item.notes && (
-                    <p className="truncate text-[11px] text-text-muted/70">{item.notes}</p>
+                    <p className="truncate text-xs text-text-muted/80">{item.notes}</p>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -824,7 +797,7 @@ function GearTab({ character }: { character: Character }) {
                     type="button"
                     onClick={() => toggleEquipped(item.id)}
                     className={cn(
-                      "rounded-sm border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest transition",
+                      "rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest transition",
                       item.equipped
                         ? "border-accent/40 bg-accent/10 text-accent"
                         : "border-line bg-surface text-text-muted hover:border-accent-muted hover:text-text",
@@ -837,7 +810,7 @@ function GearTab({ character }: { character: Character }) {
                     onClick={() => toggleAttunement(item.id)}
                     disabled={!item.attuned && attuned >= ATTUNEMENT_CAP}
                     className={cn(
-                      "rounded-sm border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest transition",
+                      "rounded-sm border px-1.5 py-0.5 font-mono text-xs uppercase tracking-widest transition",
                       item.attuned
                         ? "border-accent-muted/60 bg-accent/10 text-accent-muted"
                         : "border-line bg-surface text-text-muted hover:border-accent-muted hover:text-text",
@@ -869,7 +842,7 @@ function StoryTab({ character }: { character: Character }) {
           <div className="mt-1.5">
             <p className="text-xs font-medium text-text-muted">{bg.feature.name}</p>
             {bg.feature.desc.slice(0, 2).map((d, i) => (
-              <p key={i} className="mt-1 text-[11px] leading-relaxed text-text-muted/80">
+              <p key={i} className="mt-1 text-xs leading-relaxed text-text-muted/80">
                 {d}
               </p>
             ))}
@@ -934,7 +907,7 @@ function FeaturesList({ character }: { character: Character }) {
             >
               <div>
                 <p className="font-display text-sm text-text">{u.feature.name}</p>
-                <p className="text-[10px] font-mono uppercase tracking-widest text-text-muted">
+                <p className="text-xs font-mono uppercase tracking-widest text-text-muted">
                   {u.classId} · N{u.level}
                 </p>
               </div>
@@ -943,7 +916,7 @@ function FeaturesList({ character }: { character: Character }) {
               />
             </button>
             {open && (
-              <div className="border-t border-line/40 px-3 py-2 text-[11px] leading-relaxed text-text-muted">
+              <div className="border-t border-line/40 px-3 py-2 text-xs leading-relaxed text-text-muted">
                 {u.feature.desc.map((line, i) => (
                   <p key={i} className={i === 0 ? "" : "mt-1.5"}>
                     {line}
@@ -987,7 +960,7 @@ function StatTile({
       title={hint}
       className="rounded-md border border-line/60 bg-surface px-2 py-1.5 text-center"
     >
-      <p className="font-display text-[9px] uppercase tracking-[0.3em] text-text-muted">{label}</p>
+      <p className="font-display text-[10px] uppercase tracking-[0.3em] text-text-muted">{label}</p>
       <p
         className={cn(
           "mt-0.5 font-display text-base leading-tight",
@@ -1031,7 +1004,7 @@ function DotRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+      <span className="font-mono text-xs uppercase tracking-widest text-text-muted">
         {label}
       </span>
       <div className="flex gap-1">
@@ -1057,7 +1030,7 @@ function PersonalityBlock({ label, items }: { label: string; items: string[] }) 
   if (items.length === 0) return null;
   return (
     <div className="mb-2 last:mb-0">
-      <p className="text-[10px] font-medium uppercase tracking-widest text-text-muted">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-widest text-text-muted">{label}</p>
       <ul className="mt-0.5 flex flex-col gap-0.5">
         {items.map((it, i) => (
           <li key={i} className="text-xs leading-relaxed text-text-muted/90">
@@ -1070,5 +1043,5 @@ function PersonalityBlock({ label, items }: { label: string; items: string[] }) 
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="py-3 text-center text-[11px] text-text-muted/50">{text}</p>;
+  return <p className="py-3 text-center text-xs text-text-muted/80">{text}</p>;
 }

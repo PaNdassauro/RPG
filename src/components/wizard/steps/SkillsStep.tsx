@@ -129,14 +129,14 @@ export function SkillsStep() {
                 "flex w-full items-center justify-between rounded-md border px-4 py-3 text-left transition",
                 isSelected && "border-accent bg-accent/10",
                 !isSelected && isAllowed && "border-line bg-surface hover:border-accent-muted hover:bg-surface-elevated",
-                !isAllowed && "border-line/50 bg-surface/40 cursor-not-allowed text-text-muted/40",
+                !isAllowed && "border-line/50 bg-surface/40 cursor-not-allowed text-text-muted/60",
               )}
             >
               <div className="min-w-0">
                 <p className="font-display text-sm text-text">
                   {SKILL_LABEL[skill]}
                 </p>
-                <p className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+                <p className="font-mono text-xs uppercase tracking-widest text-text-muted">
                   {ABILITY_LABEL[ability]}
                   {srdSkill && (
                     <>
