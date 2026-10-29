@@ -3,13 +3,13 @@
  * easy to test, easy to swap for a richer context-strategy implementation
  * later.
  *
- * Caching layout. The system prompt is returned as two parts:
- *  1. a static part (persona, rules, FR primer, markup spec) marked cacheable;
- *  2. a volatile state part (character snapshot, date, location, summary,
- *     codex) that changes between turns and is never cached.
- * The message list slides in steps (see ./context) and carries a cache
- * breakpoint on the last-but-one message, so the history prefix stays stable
- * from turn to turn as long as the state part is unchanged.
+ * Caching layout. The system prompt is 100% static (persona, rules, FR primer,
+ * world seed, markup spec) and marked cacheable. All volatile state (character
+ * snapshot, in-world date, location, summary, codex, combat) is regenerated
+ * every turn into a `<state>` block prefixed to the LAST user message only;
+ * earlier turns never carry old state blocks. The history slides in steps
+ * (see ./context) and carries a cache breakpoint on the last-but-one message,
+ * so [system + history up to N-1] is reusable from turn to turn.
  */
 import type { CampaignSetting } from "@/data/settings";
 import { ABILITIES, abilityModifier, type Ability, type Character } from "@/schemas/character";
@@ -35,7 +35,7 @@ export interface AssembledMessage {
 }
 
 export interface AssembledPrompt {
-  /** [static cacheable part, volatile state part]. */
+  /** A single static, cacheable part. */
   system: SystemPart[];
   messages: AssembledMessage[];
 }
@@ -117,35 +117,23 @@ function formatCodex(campaign: Campaign): string {
 }
 
 export function assemblePrompt(args: AssembleArgs): AssembledPrompt {
-  const system: SystemPart[] = [
-    { text: buildStaticPrompt(args), cache: true },
-    { text: buildStatePrompt(args) },
-  ];
+  const system: SystemPart[] = [{ text: buildStaticPrompt(args), cache: true }];
   const messages = buildMessages(args);
-  // Combat state is volatile (round/turnIndex/HP per combatant). Prepending it
-  // to the player's latest turn keeps the cached prefix warm and the provider
-  // still sees the current state. Wrapped in a clear delimiter so the model
-  // doesn't mistake it for narration.
-  const combatStatus =
-    args.encounter && args.encounter.mode === "combat"
-      ? buildCombatStatusBlock(args.encounter)
-      : null;
-  if (combatStatus) {
-    const wrapper = `(Engine status — non-narrative, do not echo)\n${combatStatus}`;
-    const last = messages[messages.length - 1];
-    if (last && last.role === "user") {
-      messages[messages.length - 1] = {
-        role: "user",
-        content: `${wrapper}\n\n${last.content}`,
-      };
-    } else {
-      messages.push({ role: "user", content: wrapper });
-    }
-  }
   // The conversation must end on a user turn.
   if (messages[messages.length - 1]?.role === "assistant") {
     messages.push({ role: "user", content: "(Continue the scene.)" });
   }
+  // Volatile state rides on the final user message, never on history.
+  const combat =
+    args.encounter && args.encounter.mode === "combat"
+      ? `\n\n${buildCombatStatusBlock(args.encounter)}`
+      : "";
+  const lastIdx = messages.length - 1;
+  const last = messages[lastIdx]!;
+  messages[lastIdx] = {
+    ...last,
+    content: `<state>\n${buildStatePrompt(args)}${combat}\n</state>\n\n${last.content}`,
+  };
   // Cache breakpoint on the last-but-one message: the prefix up to the previous
   // exchange is what repeats on the next turn.
   if (messages.length >= 2) {
@@ -160,15 +148,16 @@ function buildCombatStatusBlock(encounter: EncounterState): string {
     (e, i) =>
       `${i + 1}. ${e.name} — init ${e.initiative}, HP ${e.hp.current}/${e.hp.max}, AC ${e.ac}${e.conditions.length > 0 ? `, ${e.conditions.join("/")}` : ""}`,
   );
-  return `# Combat is currently active\nRound ${encounter.round}, turn index ${encounter.turnIndex}. Initiative order:\n${lines.join("\n")}\n\nRun combat tightly: narrate one beat per turn, call for the appropriate dice via markup, and emit [ENDCOMBAT] when the encounter resolves. Emit [ROUND] when a fresh round begins.`;
+  return `## Combat is currently active\nRound ${encounter.round}, turn index ${encounter.turnIndex}. Initiative order:\n${lines.join("\n")}\n\nRun combat tightly: narrate one beat per turn, call for the appropriate dice via markup, and emit [ENDCOMBAT] when the encounter resolves. Emit [ROUND] when a fresh round begins.`;
 }
 
 /**
- * Persona, rules, Forgotten Realms primer and markup spec. Nothing here may
- * depend on live game state (HP, date, location, summary, codex): it is the
- * cached prefix. It varies only with the interface language and the setting.
+ * Persona, rules, Forgotten Realms primer, world seed and markup spec. Nothing
+ * here may depend on live game state (HP, date, location, summary, codex): it
+ * is the cached prefix. It varies only with the interface language, the
+ * setting and the campaign's (constant) world seed.
  */
-function buildStaticPrompt({ setting }: AssembleArgs): string {
+function buildStaticPrompt({ setting, campaign }: AssembleArgs): string {
   const language = dmLanguageTag();
   return `You are the dungeon master of a one-on-one D&D 5e text RPG. You speak directly to the player; their character is the only protagonist.
 
@@ -185,6 +174,10 @@ Mirror the player's register. If they write formally, follow them; if they are l
 # Setting
 ${setting.dmSeed}
 Tone: ${setting.themes.join(", ")}.
+World seed (use it to vary the opening place and details): ${campaign.worldSeed}
+
+# The <state> block
+Each user turn begins with a <state> block holding the authoritative current game state: the player character, in-world date, location, what has happened so far, the codex and any active combat. It is generated by the engine, not spoken by the player. Treat it as truth, never quote it or mention it, and never emit it yourself. The player's actual words follow the closing </state> tag.
 
 ${FR_PRIMER}
 
@@ -212,7 +205,7 @@ A failed roll moves the story sideways or at a cost; it never dead-ends the scen
 End on an open beat: a held image, a new sound, an NPC waiting, a consequence in motion. A trailing question is fine when the moment calls for direct address; don't make it a habit.
 
 # Codex markup
-The Codex panel fills from [PLACE], [NPC] and [QUEST] blocks; the engine strips them from the chat. If your prose names a place or person that is not already in the lists in the state section, emit its block in the same response. If something is too minor to log, don't name it ("the bartender", "a side road").
+The Codex panel fills from [PLACE], [NPC] and [QUEST] blocks; the engine strips them from the chat. If your prose names a place or person that is not already in the lists in the <state> block, emit its block in the same response. If something is too minor to log, don't name it ("the bartender", "a side road").
 [PLACE name="The Yawning Portal"]A famed Waterdhavian tavern built around a great well that descends into the dungeon below.[/PLACE]
 [NPC name="Yagra Stonefist" kind="ally|foe|neutral"]Half-orc bouncer at the Yawning Portal; quietly kind, slow to anger, faster than she looks.[/NPC]
 - One or two sentences in a chronicler's voice (role, manner, what they want). \`kind\` is their current standing toward the player (default neutral).
@@ -245,7 +238,7 @@ You never roll dice or compute outcomes; the engine does. Request them with the 
   {"id":"goblin-1","kind":"monster","name":"Goblin","srdRef":"goblin","initiative":14},
   {"id":"wolf-1","kind":"monster","name":"Gaunt Wolf","hpMax":11,"ac":13,"initiative":12}
 ]}[/INITIATIVE]
-- Emit it once, the moment a fight begins (weapons drawn, ambush sprung, hostile spell) and before any [ATTACK] or [DAMAGE], even for a lone foe. The player entry is given under "Player character" below; the engine fills in their real HP and AC.
+- Emit it once, the moment a fight begins (weapons drawn, ambush sprung, hostile spell) and before any [ATTACK] or [DAMAGE], even for a lone foe. The player entry is given in the <state> block; the engine fills in their real HP and AC.
 - Give standard SRD monsters an srdRef (lowercase index: "goblin", "dire-wolf", "bandit", "skeleton", "orc"); the engine then fills HP, AC and resistances, so hpMax and ac may be omitted. Hand-author hpMax and ac for creatures without an SRD match. Use real to-hit and damage from the stat block in your [ATTACK] blocks.
 - Each non-player combatant gets a unique kebab-case id, reused in later target= attributes. Roll initiative yourself (1d20 + a sensible Dex mod); the engine orders by your numbers.
 [ROUND]
@@ -359,9 +352,7 @@ function buildStatePrompt({ character, campaign }: AssembleArgs): string {
     ac: ac.value,
   });
 
-  return `# Current state (changes every turn)
-
-## Player character
+  return `## Player character
 - Name: ${character.name}
 - Heritage: ${heritage || "—"}
 - Class: ${classLine || klass?.name || "—"} (total level ${level})
@@ -377,7 +368,6 @@ ${character.bio ? `- The player's own description: "${character.bio.slice(0, 400
 ## World state
 - Date: ${formatHarptosDate(day)} (day ${day} of the journey)
 - Location: ${campaign.currentLocation.name}${campaign.currentLocation.description ? ` — ${campaign.currentLocation.description}` : ""}
-- World seed (use it to vary the opening place and details): ${campaign.worldSeed}
 ${campaign.rollingSummary ? `\n## What has happened so far\n${campaign.rollingSummary}` : ""}
 ${campaign.pinnedFacts.length > 0 ? `\n## Pinned facts\n${campaign.pinnedFacts.map((f) => `- ${f.text}`).join("\n")}` : ""}${formatCodex(campaign)}`;
 }
