@@ -273,7 +273,7 @@ function DmMessage({
           )}
         />
       )}
-      <p className="whitespace-pre-line font-display text-[15px] leading-relaxed text-text">
+      <p className="whitespace-pre-line font-narration text-[17px] leading-[1.65] text-text">
         {renderRichText(cleaned, registry)}
       </p>
     </article>
@@ -296,7 +296,7 @@ function DmDraft({ text }: { text: string }) {
         transition={{ duration: 0.9, ease: "easeOut" }}
         className="pointer-events-none absolute -left-3 top-0 h-full w-[2px] rounded-full bg-[var(--color-gold)]/70 shadow-[0_0_18px_2px_rgba(212,175,55,0.55)]"
       />
-      <p className="whitespace-pre-line font-display text-[15px] leading-relaxed text-text">
+      <p className="whitespace-pre-line font-narration text-[17px] leading-[1.65] text-text">
         {tokens.map((t, i) => (
           <motion.span
             key={`${i}-${t.length}`}
