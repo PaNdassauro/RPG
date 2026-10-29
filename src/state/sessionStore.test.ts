@@ -26,6 +26,8 @@ function campaign(overrides: Partial<Campaign> = {}): Campaign {
     placesVisited: [],
     npcsMet: [],
     rollingSummary: "",
+    chapters: [],
+    arcs: [],
     summaryThroughTurn: 0,
     journal: "",
     createdAt: 0,

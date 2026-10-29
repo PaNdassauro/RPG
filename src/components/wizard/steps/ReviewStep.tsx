@@ -75,6 +75,8 @@ export function ReviewStep() {
           npcsMet: [],
           journal: "",
           rollingSummary: "",
+          chapters: [],
+          arcs: [],
           summaryThroughTurn: 0,
           createdAt: now,
           updatedAt: now,

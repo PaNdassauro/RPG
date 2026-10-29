@@ -54,6 +54,17 @@ describe("importBundle", () => {
     expect(tables.messages).toHaveLength(1);
   });
 
+  it("keeps memory chapters and arcs, and defaults them for older bundles", async () => {
+    const chapter = { id: "ch1", fromTurn: 0, toTurn: 12, text: "T.", arcId: "a1", createdAt: 1 };
+    const arc = { id: "a1", fromTurn: 0, toTurn: 96, text: "Arc.", createdAt: 2 };
+    await importBundle(bundle({ campaigns: [{ ...campaign, chapters: [chapter], arcs: [arc] }] }));
+    expect(tables.campaigns[0]).toMatchObject({ chapters: [chapter], arcs: [arc] });
+
+    clearTables();
+    await importBundle(bundle());
+    expect(tables.campaigns[0]).toMatchObject({ chapters: [], arcs: [] });
+  });
+
   it("one invalid record no longer rejects the whole bundle", async () => {
     const summary = await importBundle(
       bundle({ messages: [message("good", "ok"), message("bad", 42), message("good2", "ok")] }),

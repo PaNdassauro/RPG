@@ -1,27 +1,38 @@
 /**
- * Rolling-summary maintenance. Periodically condenses the older portion of
- * a campaign's narrative so the DM keeps continuity beyond the verbatim
- * window (see ./context).
+ * Long-term memory maintenance (see ./memory). Writes chapters for the turns
+ * that left the verbatim window (see ./context) and folds old chapters into arcs.
  *
  *  - Fires fire-and-forget after a DM turn finalizes (caller awaits the
  *    DM stream first; this runs after the player sees the result).
  *  - Reuses the active provider's streamCompletion API; no new transport.
  *  - Uses an in-memory lock so simultaneous turns don't double-summarize.
- *  - Incremental: folds only the turns that left the window since the last
- *    summary into the existing one, and only once SUMMARY_MIN_NEW have piled up.
+ *  - Append-only: each chapter is written from the raw text of its span, one
+ *    call per chapter, and persisted as soon as it exists, so a failure midway
+ *    keeps the progress made. The rest is picked up on a later turn.
  *  - No-ops on the stub provider or when no provider is configured; provider
  *    errors are logged, not thrown.
- *  - Uses the cheap model when the provider is Claude.
+ *  - Chapters and arcs are the permanent record, so Claude uses its default
+ *    (Sonnet) model rather than a cheap one.
  */
 import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
 import { db } from "@/db/schema";
 import { createProviderFromRecord } from "@/ai/providers";
-import { CHEAP_CLAUDE_MODEL } from "@/ai/providers/anthropic";
+import { DEFAULT_CLAUDE_MODEL } from "@/ai/providers/anthropic";
 import type { LLMProvider } from "@/ai/provider";
-import { SUMMARY_MIN_NEW, windowStart } from "@/ai/context";
+import { narrativeCosts, profileFor, windowStart } from "@/ai/context";
+import {
+  applyMemoryUpdate,
+  arcFoldCandidates,
+  chunkSpans,
+  MAX_CHAPTERS_PER_RUN,
+  spanTranscript,
+  turnRange,
+  type MemoryUpdate,
+} from "@/ai/memory";
 import { dmLanguageTag } from "@/i18n";
-import type { ChatMessage } from "@/schemas/campaign";
+import { newId } from "@/lib/id";
+import type { Arc, Chapter } from "@/schemas/campaign";
 
 const inFlight = new Set<string>();
 
@@ -31,16 +42,15 @@ export async function maybeSummarize(opts: { force?: boolean } = {}): Promise<vo
   if (!campaign) return;
   const campaignId = campaign.id;
 
-  const narrative = messages.filter(
-    (m) => m.role === "dm" || m.role === "player",
-  );
+  const costs = narrativeCosts(messages);
+  const profile = profileFor(useKeysStore.getState().activeProvider);
   const done = campaign.summaryThroughTurn ?? 0;
-  // Fold in only the turns that left the prompt's verbatim window (all of
-  // them when forced), and only once enough have piled up to be worth a call.
-  const through = opts.force ? narrative.length : windowStart(narrative.length);
-  const fresh = through - done;
-  if (fresh <= 0) return;
-  if (!opts.force && fresh < SUMMARY_MIN_NEW) return;
+  // Chronicle the turns that left the prompt's verbatim window (all of them
+  // when forced).
+  const through = opts.force ? costs.length : windowStart(costs, profile);
+  const spans = chunkSpans(done, through);
+  const needsFold = arcFoldCandidates(campaign.chapters ?? []).length > 0;
+  if (spans.length === 0 && !needsFold) return;
   if (inFlight.has(campaignId)) return;
 
   const picked = pickProvider();
@@ -48,36 +58,72 @@ export async function maybeSummarize(opts: { force?: boolean } = {}): Promise<vo
 
   inFlight.add(campaignId);
   try {
-    const summary = await runSummary(
-      picked.provider,
-      narrative.slice(done, through),
-      campaign.rollingSummary ?? "",
-      picked.model,
-    );
-    const text = summary.trim();
-    if (text.length === 0) {
-      console.warn("[summarizer] empty summary; keeping the previous one");
-      return;
+    const chapters: Chapter[] = [...(campaign.chapters ?? [])];
+    // A forced run is the player waiting on the recap: it goes to the end.
+    for (const span of opts.force ? spans : spans.slice(0, MAX_CHAPTERS_PER_RUN)) {
+      const text = (
+        await runChapter(
+          picked.provider,
+          spanTranscript(messages, span.from, span.to),
+          chapters[chapters.length - 1]?.text,
+          picked.model,
+        )
+      ).trim();
+      if (text.length === 0) {
+        console.warn("[summarizer] empty chapter; will retry on a later turn");
+        return;
+      }
+      const chapter: Chapter = {
+        id: newId(),
+        fromTurn: span.from,
+        toTurn: span.to,
+        text,
+        createdAt: Date.now(),
+      };
+      await persist(campaignId, { chapters: [chapter] });
+      chapters.push(chapter);
     }
-    if (useSessionStore.getState().campaign?.id === campaignId) {
-      await useSessionStore.getState().updateRollingSummary(text, through);
-    } else {
-      // The player moved to another campaign while we were summarizing.
-      await db.campaigns.update(campaignId, {
-        rollingSummary: text,
-        summaryThroughTurn: through,
-        updatedAt: Date.now(),
-      });
+
+    for (let fold = arcFoldCandidates(chapters); fold.length > 0; fold = arcFoldCandidates(chapters)) {
+      const text = (await runArc(picked.provider, fold, picked.model)).trim();
+      if (text.length === 0) {
+        console.warn("[summarizer] empty arc; will retry on a later turn");
+        return;
+      }
+      const arc: Arc = {
+        id: newId(),
+        fromTurn: fold[0]!.fromTurn,
+        toTurn: fold[fold.length - 1]!.toTurn,
+        text,
+        createdAt: Date.now(),
+      };
+      const chapterIds = fold.map((c) => c.id);
+      await persist(campaignId, { arc: { arc, chapterIds } });
+      for (let i = 0; i < chapters.length; i++) {
+        if (chapterIds.includes(chapters[i]!.id)) chapters[i] = { ...chapters[i]!, arcId: arc.id };
+      }
     }
   } catch (err) {
     // Best-effort: a failure must not disrupt play, but it must not vanish.
-    console.error("[summarizer] failed to update the rolling summary", err);
+    console.error("[summarizer] failed to update the campaign memory", err);
   } finally {
     inFlight.delete(campaignId);
   }
 }
 
-/** Active provider plus the cheap model to use for summaries (Claude only). */
+/** Write to the open campaign through the store; to the stored record if the player moved on. */
+async function persist(campaignId: string, update: MemoryUpdate): Promise<void> {
+  const store = useSessionStore.getState();
+  if (store.campaign?.id === campaignId) {
+    await store.appendMemory(update);
+    return;
+  }
+  const stored = await db.campaigns.get(campaignId);
+  if (!stored) return;
+  await db.campaigns.put(applyMemoryUpdate(stored, update));
+}
+
+/** Active provider plus the model to use for memory (Claude's default; others keep their own). */
 function pickProvider(): { provider: LLMProvider; model: string | undefined } | null {
   const keys = useKeysStore.getState();
   const active = keys.activeProvider;
@@ -88,40 +134,69 @@ function pickProvider(): { provider: LLMProvider; model: string | undefined } | 
   if (!provider) return null;
   return {
     provider,
-    model: record.providerId === "claude" ? CHEAP_CLAUDE_MODEL : undefined,
+    model: record.providerId === "claude" ? DEFAULT_CLAUDE_MODEL : record.model,
   };
 }
 
-async function runSummary(
+async function runChapter(
   provider: LLMProvider,
-  toSummarize: ChatMessage[],
-  existingSummary: string,
+  transcript: string,
+  previousChapter: string | undefined,
   model: string | undefined,
 ): Promise<string> {
   const language = dmLanguageTag();
-  const system = `You are summarizing a one-on-one D&D 5e campaign so a future dungeon master can pick it up cold. Output a single dense paragraph in ${language}.
+  const system = `You are the chronicler of a one-on-one D&D 5e campaign. Write the next chapter of its permanent record so a future dungeon master can pick the story up cold. Write in ${language}.
 
 Goals:
-- Preserve all named NPCs, locations, factions, items, and clues — do NOT omit names.
-- Capture the through-line: what the player has been doing and why.
-- Note unresolved threads (a debt owed, a question unanswered, a quest active).
-- Keep the tone neutral and chronicling — this is a campaign log, not prose.
+- Keep every named NPC, place, faction and item. Never drop a name.
+- Keep promises made, debts owed, clues found and unresolved threads.
+- Say what happened and what changed, in order. Recall matters more than polish.
 
 Constraints:
-- One paragraph, 120–250 words.
-- No bullet lists, no headings, no quotes.
-- Reply only with the summary text. No preamble, no markdown.
-
-If a previous summary is provided, fold it into the new one — do not lose facts.`;
-
-  const transcript = toSummarize
-    .map((m) => `${m.role === "dm" ? "DM" : "Player"}: ${m.content.trim()}`)
-    .join("\n\n");
+- One paragraph, 100–150 words, in a plain chronicle voice.
+- No bullet lists, no headings, no quotes, no preamble.
+- Reply only with the chapter text.${
+    previousChapter
+      ? "\n- The previous chapter is given for continuity only. Do not repeat or rewrite it."
+      : ""
+  }`;
 
   const userContent = `${
-    existingSummary ? `# Previous summary\n${existingSummary}\n\n` : ""
-  }# New events to fold in\n${transcript}`;
+    previousChapter ? `# Previous chapter (read-only context)\n${previousChapter}\n\n` : ""
+  }# Events to chronicle\n${transcript}`;
+  return runCompletion(provider, system, userContent, model);
+}
 
+async function runArc(
+  provider: LLMProvider,
+  chapters: Chapter[],
+  model: string | undefined,
+): Promise<string> {
+  const language = dmLanguageTag();
+  const system = `You are the chronicler of a one-on-one D&D 5e campaign. Fold the chapters below into a single arc of its permanent record. Write in ${language}.
+
+Goals:
+- Keep every named NPC, place, faction and item that still matters. Never drop a name.
+- Keep promises, debts, clues and threads that are still open; compress what is settled.
+- Tell the through-line in order: what the player did, why, and what it led to.
+
+Constraints:
+- One paragraph, 150–250 words, in a plain chronicle voice.
+- No bullet lists, no headings, no quotes, no preamble.
+- Reply only with the arc text.`;
+
+  const userContent = `# Chapters to fold\n${chapters
+    .map((c) => `[turns ${turnRange(c.fromTurn, c.toTurn)}] ${c.text.trim()}`)
+    .join("\n\n")}`;
+  return runCompletion(provider, system, userContent, model);
+}
+
+async function runCompletion(
+  provider: LLMProvider,
+  system: string,
+  userContent: string,
+  model: string | undefined,
+): Promise<string> {
   let out = "";
   for await (const ev of provider.streamCompletion({
     system,
@@ -133,7 +208,7 @@ If a previous summary is provided, fold it into the new one — do not lose fact
     if (ev.kind === "error") throw new Error(ev.message);
     if (ev.kind === "done") {
       if (ev.reason !== "stop") {
-        throw new Error(`summary stream ended with reason "${ev.reason}"`);
+        throw new Error(`memory stream ended with reason "${ev.reason}"`);
       }
       break;
     }

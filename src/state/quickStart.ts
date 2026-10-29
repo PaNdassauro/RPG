@@ -139,6 +139,8 @@ export async function createQuickStartCampaign(
     placesVisited: [],
     npcsMet: [],
     rollingSummary: "",
+    chapters: [],
+    arcs: [],
     summaryThroughTurn: 0,
     journal: "",
     createdAt: now,

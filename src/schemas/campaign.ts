@@ -127,6 +127,33 @@ export const ShopStateSchema = z.object({
 });
 export type ShopState = z.infer<typeof ShopStateSchema>;
 
+/**
+ * Long-term memory. A chapter is a short chronicle of one span of narrative
+ * turns, written from the raw text of that span and never rewritten. Once more
+ * than a dozen chapters pile up, the oldest are folded into an arc (`arcId`).
+ */
+export const ChapterSchema = z.object({
+  id: z.string(),
+  /** First narrative turn covered (inclusive). */
+  fromTurn: z.number().int(),
+  /** End of the covered span (exclusive), in narrative turns. */
+  toTurn: z.number().int(),
+  text: z.string(),
+  /** Set once the chapter has been folded into an arc. */
+  arcId: z.string().optional(),
+  createdAt: z.number().int(),
+});
+export type Chapter = z.infer<typeof ChapterSchema>;
+
+export const ArcSchema = z.object({
+  id: z.string(),
+  fromTurn: z.number().int(),
+  toTurn: z.number().int(),
+  text: z.string(),
+  createdAt: z.number().int(),
+});
+export type Arc = z.infer<typeof ArcSchema>;
+
 export const CampaignSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -147,8 +174,13 @@ export const CampaignSchema = z.object({
   pinnedFacts: z.array(PinnedFactSchema).default([]),
   placesVisited: z.array(PlaceEntrySchema).default([]),
   npcsMet: z.array(NpcEntrySchema).default([]),
+  /** Legacy single summary paragraph. Read-only now: it is shown as the first arc. */
   rollingSummary: z.string().default(""),
-  /** Number of (DM+player) narrative turns covered by `rollingSummary`. */
+  /** Append-only chronicle of the turns that left the verbatim window. */
+  chapters: z.array(ChapterSchema).default([]),
+  /** Folded groups of older chapters. */
+  arcs: z.array(ArcSchema).default([]),
+  /** Number of (DM+player) narrative turns covered by memory (newest chapter's `toTurn`). */
   summaryThroughTurn: z.number().int().default(0),
   /**
    * Player-authored journal in markdown. Not visible to the DM. Persists

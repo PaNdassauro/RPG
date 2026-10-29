@@ -1,45 +1,117 @@
 /**
- * Shared sizing rules for the verbatim history window and the rolling summary.
+ * Shared sizing rules for the verbatim history window.
  *
- * The window slides in steps instead of one message per turn, so the message
- * prefix stays byte-identical between turns (prompt-cache friendly) and the
- * summarizer only has to fire once per step. Counts are in narrative messages
- * (DM + player), the same unit `Campaign.summaryThroughTurn` uses.
+ * The window is measured in tokens and slides with hysteresis: it grows until
+ * it exceeds `windowHigh`, then drops its oldest messages in one go until it
+ * fits `windowLow`. Between slides the start index is constant, so the message
+ * prefix stays byte-identical turn to turn (prompt-cache friendly) and the
+ * summarizer only has to fire when a slide actually happens. Indices are in
+ * narrative messages (DM + player), the unit `Campaign.summaryThroughTurn` uses.
  */
+import type { ChatMessage } from "@/schemas/campaign";
+import type { ProviderId } from "./provider";
 
-/** Most narrative messages ever sent verbatim in the normal case. */
-export const WINDOW_MAX = 34;
-/** How many messages leave the window at once when it overflows. */
-export const WINDOW_STEP = 10;
-/** Hard cap when the summarizer is behind (never send more than this). */
-export const WINDOW_HARD_MAX = 60;
-/** Summarize only when at least this many new turns have left the window. */
-export const SUMMARY_MIN_NEW = 10;
+export interface ContextProfile {
+  /** The verbatim window slides once it grows past this many tokens... */
+  windowHigh: number;
+  /** ...down to at most this many. */
+  windowLow: number;
+  /** Token budget for triggered (full-detail) codex entries in the <state> tail. */
+  triggeredBudget: number;
+  /** Most entries listed (names only) in the codex index. */
+  indexMax: number;
+  /** Newest unfolded chapters shown in <memory> (Infinity = all). */
+  chaptersShown: number;
+  /** Newest arcs shown in <memory> (Infinity = all). */
+  arcsShown: number;
+}
 
-/**
- * Index of the first narrative message in the sliding window. The window holds
- * between WINDOW_MAX - WINDOW_STEP + 1 and WINDOW_MAX messages.
- */
-export function windowStart(
-  narrativeCount: number,
-  max: number = WINDOW_MAX,
-  step: number = WINDOW_STEP,
-): number {
-  if (narrativeCount <= max) return 0;
-  return Math.ceil((narrativeCount - max) / step) * step;
+export const CLOUD_PROFILE: ContextProfile = {
+  windowHigh: 40_000,
+  windowLow: 25_000,
+  triggeredBudget: 1_500,
+  indexMax: 150,
+  chaptersShown: Infinity,
+  arcsShown: Infinity,
+};
+
+/** Small local models: tight context, so everything is capped harder. */
+export const LOCAL_PROFILE: ContextProfile = {
+  windowHigh: 5_000,
+  windowLow: 3_000,
+  triggeredBudget: 600,
+  indexMax: 40,
+  chaptersShown: 4,
+  arcsShown: 3,
+};
+
+/** Local (Ollama) gets the small profile; every other provider, and the stub, the cloud one. */
+export function profileFor(providerId: ProviderId | null | undefined): ContextProfile {
+  return providerId === "ollama" ? LOCAL_PROFILE : CLOUD_PROFILE;
+}
+
+/** Cheap token estimate: no tokenizer in the browser, and this errs a little high. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3.6);
 }
 
 /**
+ * Prompt cost of every narrative message (DM + player), in order. A message's
+ * cost includes the engine result lines that follow it, because the prompt
+ * folds those in as "(Engine: …)".
+ */
+export function narrativeCosts(history: ChatMessage[]): number[] {
+  const costs: number[] = [];
+  for (const m of history) {
+    if (m.role === "tool") continue;
+    if (m.role === "system") {
+      const text = m.content.trim();
+      if (text.length === 0 || costs.length === 0) continue;
+      costs[costs.length - 1]! += estimateTokens(`(Engine: ${text})`);
+      continue;
+    }
+    costs.push(estimateTokens(m.content));
+  }
+  return costs;
+}
+
+/**
+ * Index of the first narrative message in the sliding window. Stateless: it
+ * replays the growth of the conversation, so the result depends only on the
+ * messages that exist, and is the same on every turn between slides.
+ */
+export function windowStart(costs: number[], profile: ContextProfile): number {
+  let start = 0;
+  let sum = 0;
+  for (let i = 0; i < costs.length; i++) {
+    sum += costs[i]!;
+    if (sum <= profile.windowHigh) continue;
+    // Always keep the newest message, even if it alone exceeds the budget.
+    while (start < i && sum > profile.windowLow) sum -= costs[start++]!;
+  }
+  return start;
+}
+
+/** Hard cap multiplier on windowHigh when the summarizer is behind. */
+const HARD_CAP_FACTOR = 1.5;
+
+/**
  * Where the prompt's verbatim window actually starts. Turns are kept verbatim
- * until the rolling summary covers them, so a slow or failed summarizer never
- * opens a gap in the DM's memory (bounded by WINDOW_HARD_MAX).
+ * until memory covers them, so a slow or failed summarizer never opens a gap
+ * in the DM's recall (bounded by windowHigh × 1.5 tokens).
  */
 export function promptWindowStart(
-  narrativeCount: number,
+  costs: number[],
   summaryThroughTurn: number,
-  max: number = WINDOW_MAX,
+  profile: ContextProfile,
 ): number {
-  const stepped = windowStart(narrativeCount, max);
-  const floor = Math.max(summaryThroughTurn, narrativeCount - WINDOW_HARD_MAX, 0);
+  const stepped = windowStart(costs, profile);
+  const cap = profile.windowHigh * HARD_CAP_FACTOR;
+  let hardStart = costs.length;
+  let sum = 0;
+  while (hardStart > 0 && sum + costs[hardStart - 1]! <= cap) sum += costs[--hardStart]!;
+  // Never drop the newest message, even when it alone is over the cap.
+  hardStart = Math.min(hardStart, Math.max(costs.length - 1, 0));
+  const floor = Math.max(summaryThroughTurn, hardStart, 0);
   return Math.min(stepped, floor);
 }

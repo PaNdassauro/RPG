@@ -7,6 +7,7 @@ import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
 import { getWorld, type CampaignSetting } from "@/data/settings";
 import { assemblePrompt } from "@/ai/promptAssembly";
+import { profileFor } from "@/ai/context";
 import { createProviderFromRecord } from "@/ai/providers";
 import type { LLMProvider, StreamEvent } from "@/ai/provider";
 import { resolveDamage, resolveHealing, type DamageResolution } from "@/engine/combat";
@@ -360,8 +361,8 @@ async function applyMarkupSideEffects(text: string, campaignId: string): Promise
   }
   if (!alive()) return;
 
-  // Fire-and-forget: extend the rolling summary if we've crossed the
-  // threshold. Best-effort — failures are swallowed inside.
+  // Fire-and-forget: chronicle the turns that left the window, if any.
+  // Best-effort — failures are swallowed inside.
   void maybeSummarize();
 }
 
@@ -907,6 +908,7 @@ async function* streamFromProvider(
     history,
     encounter,
     pendingPlayerInput: args.isFirstTurn ? "" : args.playerInput,
+    profile: profileFor(provider.id),
   });
 
   yield* provider.streamCompletion({

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { db } from "@/db/schema";
+import { applyMemoryUpdate, type MemoryUpdate } from "@/ai/memory";
 import type {
   Campaign,
   ChatMessage,
@@ -355,7 +356,7 @@ interface SessionState {
   travel: (input: { days: number; destination?: string }) => Promise<{ rationsConsumed: number; daysHungry: number }>;
   /** Set rations directly (used by shop purchases / quest rewards). */
   setRations: (next: number) => Promise<void>;
-  /** Regenerate the rolling summary now (manual recap). */
+  /** Chronicle everything up to the end of the story now (manual recap). */
   forceRecap: () => Promise<void>;
   /** Mark the campaign as concluded. Used after the DM finishes the closing recap. */
   endCampaign: () => Promise<void>;
@@ -378,8 +379,8 @@ interface SessionState {
     objective?: string | null;
     status?: Quest["status"] | null;
   }) => Promise<boolean>;
-  /** Replace the rolling summary and stamp how many turns it covers. */
-  updateRollingSummary: (summary: string, throughTurn: number) => Promise<void>;
+  /** Append memory chapters and/or fold an arc; `summaryThroughTurn` follows the newest chapter. */
+  appendMemory: (update: MemoryUpdate) => Promise<void>;
 
   /**
    * Write the player's new HP. Also drives the dying loop: healing from 0
@@ -1686,15 +1687,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return true;
   },
 
-  async updateRollingSummary(summary, throughTurn) {
+  async appendMemory(update) {
     const { campaign } = get();
     if (!campaign) return;
-    const next: Campaign = {
-      ...campaign,
-      rollingSummary: summary,
-      summaryThroughTurn: throughTurn,
-      updatedAt: Date.now(),
-    };
+    const next = applyMemoryUpdate(campaign, update);
     await db.campaigns.put(next);
     set({ campaign: next });
   },

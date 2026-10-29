@@ -3,6 +3,7 @@ import { Scroll, RefreshCw } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/cn";
+import { memoryArcs, turnRange, unfoldedChapters } from "@/ai/memory";
 import { Dialog, DialogTitle } from "@/components/ui/Dialog";
 import { CloseButton } from "@/components/ui/CloseButton";
 
@@ -28,6 +29,9 @@ export function RecapModal({ open, onClose }: Props) {
 
   if (!campaign) return null;
 
+  const arcs = memoryArcs(campaign);
+  const chapters = unfoldedChapters(campaign);
+
   return (
     <Dialog open={open} onClose={onClose} className="max-h-[80dvh] max-w-2xl">
       <header className="flex items-start justify-between border-b border-line/60 bg-canvas/40 px-6 py-4">
@@ -46,10 +50,15 @@ export function RecapModal({ open, onClose }: Props) {
         <CloseButton onClick={onClose} />
       </header>
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {campaign.rollingSummary ? (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">
-            {campaign.rollingSummary}
-          </p>
+        {arcs.length > 0 || chapters.length > 0 ? (
+          <div className="space-y-6">
+            <RecapSection heading={t("play.recap.arcs")} turnsLabel={t("play.recap.turns")} entries={arcs} />
+            <RecapSection
+              heading={t("play.recap.chapters")}
+              turnsLabel={t("play.recap.turns")}
+              entries={chapters}
+            />
+          </div>
         ) : (
           <p className="py-12 text-center text-sm text-text-muted/80">
             {t("play.recap.empty")}
@@ -75,5 +84,42 @@ export function RecapModal({ open, onClose }: Props) {
         </button>
       </footer>
     </Dialog>
+  );
+}
+
+interface RecapEntry {
+  id: string;
+  fromTurn: number;
+  toTurn: number;
+  text: string;
+}
+
+/** One group of memory entries, oldest first, each under its turn range. */
+function RecapSection({
+  heading,
+  turnsLabel,
+  entries,
+}: {
+  heading: string;
+  turnsLabel: string;
+  entries: RecapEntry[];
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <section>
+      <h3 className="mb-3 font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
+        {heading}
+      </h3>
+      <ol className="space-y-4">
+        {entries.map((e) => (
+          <li key={e.id}>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+              {turnsLabel} {turnRange(e.fromTurn, e.toTurn)}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-text">{e.text}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

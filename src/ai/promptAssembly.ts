@@ -5,11 +5,14 @@
  *
  * Caching layout. The system prompt is 100% static (persona, rules, FR primer,
  * world seed, markup spec) and marked cacheable. All volatile state (character
- * snapshot, in-world date, location, summary, codex, combat) is regenerated
- * every turn into a `<state>` block prefixed to the LAST user message only;
- * earlier turns never carry old state blocks. The history slides in steps
- * (see ./context) and carries a cache breakpoint on the last-but-one message,
- * so [system + history up to N-1] is reusable from turn to turn.
+ * snapshot, in-world date, location, relevant codex entries, combat) is
+ * regenerated every turn into a `<state>` block prefixed to the LAST user
+ * message only; earlier turns never carry old state blocks. Long-term memory
+ * (arcs and chapters, see ./memory) is a `<memory>` block that opens the
+ * history; it changes only when the summarizer writes, so it stays inside the
+ * cached prefix. The verbatim window slides with hysteresis (see ./context)
+ * and carries a cache breakpoint on the last-but-one message, so
+ * [system + history up to N-1] is reusable from turn to turn.
  */
 import type { CampaignSetting } from "@/data/settings";
 import { ABILITIES, abilityModifier, type Ability, type Character } from "@/schemas/character";
@@ -23,7 +26,9 @@ import {
 import type { Campaign, ChatMessage, EncounterState } from "@/schemas/campaign";
 import { dmLanguageTag } from "@/i18n";
 import type { SystemPart } from "./provider";
-import { promptWindowStart, WINDOW_MAX } from "./context";
+import { CLOUD_PROFILE, narrativeCosts, promptWindowStart, type ContextProfile } from "./context";
+import { capDescription, selectCodex, SCAN_MESSAGES } from "./codexSelect";
+import { formatMemoryBlock } from "./memory";
 import { FR_PRIMER } from "./frPrimer";
 import { formatHarptosDate } from "./harptos";
 
@@ -49,8 +54,8 @@ interface AssembleArgs {
   encounter?: EncounterState | null;
   /** New player input; skipped if the history already ends with it. */
   pendingPlayerInput?: string;
-  /** Maximum narrative messages sent verbatim (the window slides in steps). */
-  windowSize?: number;
+  /** Window, memory and codex sizing; defaults to the cloud profile. */
+  profile?: ContextProfile;
 }
 
 const ABILITY_LABEL: Record<Ability, string> = {
@@ -62,56 +67,87 @@ const ABILITY_LABEL: Record<Ability, string> = {
   cha: "CHA",
 };
 
-function formatCodex(campaign: Campaign): string {
-  const places = campaign.placesVisited ?? [];
-  const npcs = campaign.npcsMet ?? [];
-  const quests = campaign.quests ?? [];
-  if (places.length === 0 && npcs.length === 0 && quests.length === 0) return "";
+function dispositionLabel(d: number): string {
+  switch (d) {
+    case -2:
+      return " · hostile to player";
+    case -1:
+      return " · wary";
+    case 1:
+      return " · friendly";
+    case 2:
+      return " · devoted";
+    default:
+      return "";
+  }
+}
+
+/**
+ * The codex as the DM sees it this turn: full detail for what matters now
+ * (core entries plus whatever the recent scene names), a one-line index for
+ * everything else already recorded.
+ */
+function formatCodex(
+  campaign: Campaign,
+  history: ChatMessage[],
+  pendingPlayerInput: string,
+  profile: ContextProfile,
+): string {
+  const recent = history
+    .filter((m) => m.role === "dm" || m.role === "player")
+    .slice(-SCAN_MESSAGES)
+    .map((m) => m.content);
+  const pending = pendingPlayerInput.trim();
+  const sel = selectCodex(campaign, pending.length > 0 ? [...recent, pending] : recent, profile);
+
   const parts: string[] = [];
-  if (places.length > 0) {
+  const placeLines = [
+    ...(sel.currentPlace
+      ? [`- **${sel.currentPlace.name}** — ${sel.currentPlace.description}`]
+      : []),
+    ...sel.triggeredPlaces.map((p) => `- **${p.name}** — ${capDescription(p.description)}`),
+  ];
+  if (placeLines.length > 0) parts.push(`\n## Places relevant now\n${placeLines.join("\n")}`);
+  if (sel.triggeredNpcs.length > 0) {
     parts.push(
-      `\n## Places known to the player\n${places
-        .map((p) => `- **${p.name}** — ${p.description}`)
+      `\n## Characters relevant now\n${sel.triggeredNpcs
+        .map(
+          (n) =>
+            `- **${n.name}** (${n.kind}${dispositionLabel(n.disposition ?? 0)}) — ${capDescription(n.description)}`,
+        )
         .join("\n")}`,
     );
   }
-  if (npcs.length > 0) {
+  if (sel.activeQuests.length > 0) {
     parts.push(
-      `\n## Characters the player has met\n${npcs
-        .map((n) => {
-          const d = n.disposition ?? 0;
-          const dLabel =
-            d === -2
-              ? " · hostile to player"
-              : d === -1
-                ? " · wary"
-                : d === 1
-                  ? " · friendly"
-                  : d === 2
-                    ? " · devoted"
-                    : "";
-          return `- **${n.name}** (${n.kind}${dLabel}) — ${n.description}`;
-        })
+      `\n## Active quests (use the listed id to update)\n${sel.activeQuests
+        .map((q) => `- id:\`${q.id}\` — **${q.title}**: ${q.objective}`)
         .join("\n")}`,
     );
   }
-  if (quests.length > 0) {
-    const active = quests.filter((q) => q.status === "active");
-    const closed = quests.filter((q) => q.status !== "active");
-    if (active.length > 0) {
-      parts.push(
-        `\n## Active quests (use the listed id to update)\n${active
-          .map((q) => `- id:\`${q.id}\` — **${q.title}**: ${q.objective}`)
-          .join("\n")}`,
-      );
-    }
-    if (closed.length > 0) {
-      parts.push(
-        `\n## Resolved quests (do not re-emit)\n${closed
-          .map((q) => `- id:\`${q.id}\` — **${q.title}** (${q.status})`)
-          .join("\n")}`,
-      );
-    }
+  if (sel.companions.length > 0) {
+    parts.push(
+      `\n## Companions\n${sel.companions
+        .map(
+          (c) =>
+            `- **${c.name}** (${c.kind}${c.active ? "" : ", resting"}, HP ${c.hpCurrent}/${c.hpMax}, AC ${c.ac})${c.description ? ` — ${c.description}` : ""}`,
+        )
+        .join("\n")}`,
+    );
+  }
+  if (sel.factions.length > 0) {
+    parts.push(
+      `\n## Factions\n${sel.factions
+        .map((f) => `- **${f.name}** — reputation ${f.reputation}`)
+        .join("\n")}`,
+    );
+  }
+  if (sel.index.length > 0) {
+    parts.push(
+      `\n## Index (already recorded; details appear only when relevant)\n${sel.index
+        .map((i) => `- ${i.kind}: ${i.label}`)
+        .join("\n")}`,
+    );
   }
   return parts.join("");
 }
@@ -153,7 +189,7 @@ function buildCombatStatusBlock(encounter: EncounterState): string {
 
 /**
  * Persona, rules, Forgotten Realms primer, world seed and markup spec. Nothing
- * here may depend on live game state (HP, date, location, summary, codex): it
+ * here may depend on live game state (HP, date, location, memory, codex): it
  * is the cached prefix. It varies only with the interface language, the
  * setting and the campaign's (constant) world seed.
  */
@@ -177,7 +213,10 @@ Tone: ${setting.themes.join(", ")}.
 World seed (use it to vary the opening place and details): ${campaign.worldSeed}
 
 # The <state> block
-The latest user turn begins with a <state> block holding the authoritative current game state: the player character, in-world date, location, what has happened so far, the codex and any active combat. It is generated by the engine, not spoken by the player. Treat it as truth, never quote it or mention it, and never emit it yourself. The player's actual words follow the closing </state> tag.
+The latest user turn begins with a <state> block holding the authoritative current game state: the player character, in-world date, location, the codex entries relevant right now and any active combat. It is generated by the engine, not spoken by the player. Treat it as truth, never quote it or mention it, and never emit it yourself. The player's actual words follow the closing </state> tag.
+
+# The <memory> block
+The first user turn may begin with a <memory> block: the authoritative record of earlier events, oldest first (arcs, then chapters, each with its turn range). What it says happened, happened. Keep faith with its names, promises, debts and open threads. It is generated by the engine; never quote it, mention it or emit it.
 
 ${FR_PRIMER}
 
@@ -205,11 +244,11 @@ A failed roll moves the story sideways or at a cost; it never dead-ends the scen
 End on an open beat: a held image, a new sound, an NPC waiting, a consequence in motion. A trailing question is fine when the moment calls for direct address; don't make it a habit.
 
 # Codex markup
-The Codex panel fills from [PLACE], [NPC] and [QUEST] blocks; the engine strips them from the chat. If your prose names a place or person that is not already in the lists in the <state> block, emit its block in the same response. If something is too minor to log, don't name it ("the bartender", "a side road").
+The Codex panel fills from [PLACE], [NPC] and [QUEST] blocks; the engine strips them from the chat. Details are shown only for the entries relevant right now; the Index lists everything else already recorded. If your prose names a place or person that is in neither the detail lists nor the Index in the <state> block, emit its block in the same response. If something is too minor to log, don't name it ("the bartender", "a side road").
 [PLACE name="The Yawning Portal"]A famed Waterdhavian tavern built around a great well that descends into the dungeon below.[/PLACE]
 [NPC name="Yagra Stonefist" kind="ally|foe|neutral"]Half-orc bouncer at the Yawning Portal; quietly kind, slow to anger, faster than she looks.[/NPC]
 - One or two sentences in a chronicler's voice (role, manner, what they want). \`kind\` is their current standing toward the player (default neutral).
-- Don't re-emit entries already listed. At most three [PLACE] and three [NPC] per response.
+- Never re-emit [PLACE] or [NPC] for a name in the Index or in the detail lists. At most three [PLACE] and three [NPC] per response.
 - Quests are upserted by a stable kebab-case id: [QUEST id="rescue-the-mason" title="Rescue the Mason" objective="Find the mason before nightfall."][/QUEST], and [QUEST id="rescue-the-mason" status="completed"][/QUEST] to close (active | completed | failed | abandoned). Reuse the id from the Active quests list. Open one when an NPC asks something of the player or a clear goal forms; at most one open or close per response.
 
 # Engine markup
@@ -278,10 +317,16 @@ When the player's HP hits 0 they fall and combat is suspended. The next message 
 }
 
 /**
- * Per-turn state: character snapshot, in-world date and place, rolling summary,
- * pinned facts and codex. Never cached.
+ * Per-turn state: character snapshot, in-world date and place, pinned facts and
+ * the relevant slice of the codex. Never cached.
  */
-function buildStatePrompt({ character, campaign }: AssembleArgs): string {
+function buildStatePrompt({
+  character,
+  campaign,
+  history,
+  pendingPlayerInput,
+  profile = CLOUD_PROFILE,
+}: AssembleArgs): string {
   const race = character.raceId ? getRace(character.raceId) : null;
   const subrace = character.subraceId ? getSubrace(character.subraceId) : null;
   const klass = character.classes[0] ? getClass(character.classes[0].classId) : null;
@@ -368,8 +413,7 @@ ${character.bio ? `- The player's own description: "${character.bio.slice(0, 400
 ## World state
 - Date: ${formatHarptosDate(day)} (day ${day} of the journey)
 - Location: ${campaign.currentLocation.name}${campaign.currentLocation.description ? ` — ${campaign.currentLocation.description}` : ""}
-${campaign.rollingSummary ? `\n## What has happened so far\n${campaign.rollingSummary}` : ""}
-${campaign.pinnedFacts.length > 0 ? `\n## Pinned facts\n${campaign.pinnedFacts.map((f) => `- ${f.text}`).join("\n")}` : ""}${formatCodex(campaign)}`;
+${campaign.pinnedFacts.length > 0 ? `\n## Pinned facts\n${campaign.pinnedFacts.map((f) => `- ${f.text}`).join("\n")}` : ""}${formatCodex(campaign, history, pendingPlayerInput ?? "", profile)}`;
 }
 
 interface FlatMessage {
@@ -389,11 +433,11 @@ function normalize(text: string): string {
  */
 function buildMessages(args: AssembleArgs): AssembledMessage[] {
   const { history, pendingPlayerInput, campaign } = args;
-  const narrativeCount = history.filter((m) => m.role === "dm" || m.role === "player").length;
+  const profile = args.profile ?? CLOUD_PROFILE;
   const start = promptWindowStart(
-    narrativeCount,
+    narrativeCosts(history),
     campaign.summaryThroughTurn ?? 0,
-    args.windowSize ?? WINDOW_MAX,
+    profile,
   );
 
   const flat: FlatMessage[] = [];
@@ -433,20 +477,20 @@ function buildMessages(args: AssembleArgs): AssembledMessage[] {
     if (!alreadyThere) push("user", pending, "\n\n");
   }
 
-  // Anthropic requires the conversation to start with a user turn.
+  // Long-term memory opens the history. It rides on the first user turn
+  // (roles must alternate), and also satisfies "starts with a user turn".
+  const memory = formatMemoryBlock(campaign, profile);
+  const bootstrap = "(Continue the scene from where it stands.)";
   if (flat.length > 0 && flat[0]!.role === "assistant") {
-    flat.unshift({
-      role: "user",
-      content: "(Continue the scene from where it stands.)",
-    });
+    flat.unshift({ role: "user", content: memory ? `${memory}\n\n${bootstrap}` : bootstrap });
+  } else if (flat.length > 0 && memory) {
+    flat[0]!.content = `${memory}\n\n${flat[0]!.content}`;
   }
 
   // First turn, before any input: seed one.
   if (flat.length === 0) {
-    flat.push({
-      role: "user",
-      content: "(Open the scene. Set the camera. Introduce my character to the world.)",
-    });
+    const opening = "(Open the scene. Set the camera. Introduce my character to the world.)";
+    flat.push({ role: "user", content: memory ? `${memory}\n\n${opening}` : opening });
   }
 
   return flat;

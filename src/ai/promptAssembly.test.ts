@@ -4,7 +4,14 @@ import { FR_FACTIONS } from "./frPrimer";
 import { getWorld } from "@/data/settings";
 import { finalizeCharacter } from "@/state/finalizeCharacter";
 import { armorClass } from "@/state/sheetDerived";
-import type { Campaign, ChatMessage, EncounterState } from "@/schemas/campaign";
+import {
+  CLOUD_PROFILE,
+  LOCAL_PROFILE,
+  narrativeCosts,
+  windowStart,
+  type ContextProfile,
+} from "./context";
+import type { Campaign, Chapter, ChatMessage, EncounterState, NpcEntry } from "@/schemas/campaign";
 import type { Character } from "@/schemas/character";
 
 function makeCharacter(): Character {
@@ -40,6 +47,8 @@ function makeCampaign(character: Character, over: Partial<Campaign> = {}): Campa
     placesVisited: [],
     npcsMet: [],
     rollingSummary: "",
+    chapters: [],
+    arcs: [],
     summaryThroughTurn: 0,
     journal: "",
     createdAt: 1,
@@ -70,6 +79,7 @@ function buildRaw(
   charOver: Partial<Character> = {},
   campOver: Partial<Campaign> = {},
   encounter?: EncounterState,
+  profile?: ContextProfile,
 ): AssembledPrompt {
   const character = { ...makeCharacter(), ...charOver };
   return assemblePrompt({
@@ -77,6 +87,7 @@ function buildRaw(
     character,
     campaign: makeCampaign(character, campOver),
     history,
+    ...(profile ? { profile } : {}),
     ...(encounter ? { encounter } : {}),
     ...(pendingPlayerInput !== undefined ? { pendingPlayerInput } : {}),
   });
@@ -88,8 +99,9 @@ function build(
   pendingPlayerInput?: string,
   charOver: Partial<Character> = {},
   campOver: Partial<Campaign> = {},
+  profile?: ContextProfile,
 ): AssembledPrompt {
-  const out = buildRaw(history, pendingPlayerInput, charOver, campOver);
+  const out = buildRaw(history, pendingPlayerInput, charOver, campOver, undefined, profile);
   return {
     ...out,
     messages: out.messages.map((m) => ({ ...m, content: m.content.replace(STATE_PREFIX, "") })),
@@ -194,17 +206,145 @@ describe("assemblePrompt messages", () => {
     expect(messages.map((m) => m.cache === true)).toEqual([false, true, false]);
   });
 
-  it("slides the window in steps so the prefix is stable between turns", () => {
+  it("slides the window with hysteresis so the prefix is stable between turns", () => {
+    // ~280 tokens per message against a 1000/600 window: a slide every few turns.
+    const small: ContextProfile = { ...CLOUD_PROFILE, windowHigh: 1_000, windowLow: 600 };
     const history: ChatMessage[] = [];
     const starts: string[] = [];
-    for (let i = 0; i < 50; i++) {
-      history.push(msg(i % 2 === 0 ? "player" : "dm", `turn ${i}`));
+    for (let i = 0; i < 60; i++) {
+      history.push(msg(i % 2 === 0 ? "player" : "dm", `${String(i).padStart(3, "0")}`.padEnd(1_000, ".")));
       // A summary that always keeps up with the window.
-      const { messages } = build(history, "", {}, { summaryThroughTurn: 1000 });
+      const { messages } = build(history, "", {}, { summaryThroughTurn: 1000 }, small);
       starts.push(messages[0]!.content);
     }
-    // The first message changes only a handful of times, not every turn.
-    expect(new Set(starts).size).toBeLessThanOrEqual(6);
+    const changes = starts.filter((s, i) => i > 0 && s !== starts[i - 1]).length;
+    expect(changes).toBeGreaterThan(0);
+    expect(changes).toBeLessThanOrEqual(60 / 2);
+  });
+});
+
+describe("assemblePrompt memory", () => {
+  const chapters: Chapter[] = [
+    { id: "c1", fromTurn: 0, toTurn: 12, text: "CHAPTER-ONE-TEXT", createdAt: 1 },
+    { id: "c2", fromTurn: 12, toTurn: 24, text: "CHAPTER-TWO-TEXT", createdAt: 2 },
+  ];
+  const memCamp: Partial<Campaign> = { chapters, summaryThroughTurn: 24 };
+
+  /** Enough history that the window starts after the chaptered turns. */
+  function longHistory(n: number): ChatMessage[] {
+    return Array.from({ length: n }, (_, i) =>
+      msg(i % 2 === 0 ? "player" : "dm", `${String(i).padStart(3, "0")}`.padEnd(1_000, ".")),
+    );
+  }
+  const small: ContextProfile = { ...CLOUD_PROFILE, windowHigh: 3_000, windowLow: 2_000 };
+
+  it("opens the history with the <memory> block, merged into the first user turn", () => {
+    const history = longHistory(41);
+    const out = buildRaw(history, "", {}, memCamp, undefined, small);
+    const first = out.messages[0]!;
+    expect(first.role).toBe("user");
+    expect(first.content.startsWith("<memory>\n")).toBe(true);
+    expect(first.content).toContain("CHAPTER-ONE-TEXT");
+    expect(first.content).toContain("[turns 13-24] CHAPTER-TWO-TEXT");
+    const all = out.messages.map((m) => m.content).join("\n");
+    expect(all.split("<memory>").length - 1).toBe(1);
+    for (let i = 1; i < out.messages.length; i++) {
+      expect(out.messages[i]!.role).not.toBe(out.messages[i - 1]!.role);
+    }
+  });
+
+  it("gets its own user turn when the window opens on a DM message", () => {
+    const out = buildRaw([msg("dm", "Opening."), msg("player", "Hi")], "", {}, memCamp);
+    expect(out.messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(out.messages[0]!.content).toContain("<memory>");
+    expect(out.messages[1]).toMatchObject({ role: "assistant", content: "Opening." });
+  });
+
+  it("is byte-identical across two consecutive turns that do not slide the window", () => {
+    const camp: Partial<Campaign> = { chapters, summaryThroughTurn: 1000 };
+    const h = longHistory(60);
+    const start = (n: number) => windowStart(narrativeCosts(h.slice(0, n)), small);
+    let n = 30;
+    while (start(n + 2) !== start(n)) n++;
+    const a = buildRaw(h.slice(0, n), "", {}, camp, undefined, small).messages;
+    const b = buildRaw(h.slice(0, n + 2), "", {}, camp, undefined, small).messages;
+    expect(a[0]!.content.startsWith("<memory>\n")).toBe(true);
+    expect(b[0]!.content).toBe(a[0]!.content);
+    const plain = (ms: typeof a) => ms.map((m) => ({ role: m.role, content: m.content }));
+    expect(plain(b).slice(0, a.length - 1)).toEqual(plain(a).slice(0, a.length - 1));
+  });
+
+  it("changes only when chapters change", () => {
+    const history = longHistory(41);
+    const a = buildRaw(history, "", {}, memCamp, undefined, small).messages[0]!.content;
+    const more: Chapter = { id: "c3", fromTurn: 24, toTurn: 30, text: "CHAPTER-THREE-TEXT", createdAt: 3 };
+    const b = buildRaw(history, "", { }, { chapters: [...chapters, more], summaryThroughTurn: 30 }, undefined, small).messages[0]!.content;
+    expect(b).not.toBe(a);
+    expect(b).toContain("CHAPTER-THREE-TEXT");
+  });
+
+  it("shows a legacy rollingSummary as the first arc", () => {
+    const legacy: Partial<Campaign> = {
+      rollingSummary: "LEGACY-SUMMARY-TEXT",
+      chapters: [{ id: "c1", fromTurn: 24, toTurn: 36, text: "CHAPTER-ONE-TEXT", createdAt: 1 }],
+      summaryThroughTurn: 36,
+    };
+    const first = buildRaw(longHistory(41), "", {}, legacy, undefined, small).messages[0]!.content;
+    expect(first).toContain("## Arcs\n[turns 1-24] LEGACY-SUMMARY-TEXT");
+    expect(first.indexOf("LEGACY-SUMMARY-TEXT")).toBeLessThan(first.indexOf("CHAPTER-ONE-TEXT"));
+  });
+
+  it("keeps the summary out of the state tail", () => {
+    const out = buildRaw(longHistory(41), "", {}, { ...memCamp, rollingSummary: "LEGACY-SUMMARY-TEXT" }, undefined, small);
+    const last = out.messages[out.messages.length - 1]!.content;
+    expect(last).not.toContain("LEGACY-SUMMARY-TEXT");
+    expect(last).not.toContain("CHAPTER-TWO-TEXT");
+    expect(last).not.toContain("What has happened so far");
+  });
+
+  it("explains <memory> to the DM in the static prompt", () => {
+    const out = buildRaw([msg("player", "hi")]);
+    expect(out.system[0]!.text).toMatch(/<memory>/);
+    expect(out.system[0]!.text).toMatch(/authoritative record of earlier events, oldest first/);
+  });
+
+  it("applies the local profile's memory caps", () => {
+    const many: Chapter[] = Array.from({ length: 8 }, (_, i) => ({
+      id: `c${i}`,
+      fromTurn: i * 12,
+      toTurn: i * 12 + 12,
+      text: `CH-${i}-TEXT`,
+      createdAt: i,
+    }));
+    const out = buildRaw(longHistory(110), "", {}, { chapters: many, summaryThroughTurn: 96 }, undefined, LOCAL_PROFILE);
+    const first = out.messages[0]!.content;
+    expect(first).not.toContain("CH-3-TEXT");
+    expect(first).toContain("CH-4-TEXT");
+    expect(first).toContain("CH-7-TEXT");
+  });
+});
+
+describe("assemblePrompt codex", () => {
+  const npcs: NpcEntry[] = [
+    { id: "n1", name: "Marta Quill", description: "MARTA-DETAIL baker of the quay.", kind: "ally", disposition: 1, key: "marta quill", addedAt: 1 },
+    { id: "n2", name: "Orsik Vane", description: "ORSIK-DETAIL a smuggler.", kind: "foe", disposition: -2, key: "orsik vane", addedAt: 2 },
+  ];
+
+  it("details triggered NPCs, and lists the others by name only in the index", () => {
+    const history = [msg("player", "I go and find Marta."), msg("dm", "Marta waves from her stall.")];
+    const out = buildRaw(history, "I ask Marta about bread.", {}, { npcsMet: npcs });
+    const state = out.messages[out.messages.length - 1]!.content;
+    expect(state).toContain("MARTA-DETAIL");
+    expect(state).not.toContain("ORSIK-DETAIL");
+    expect(state).toContain("## Index");
+    expect(state).toContain("- npc: Orsik Vane (foe)");
+    expect(state).not.toContain("- npc: Marta Quill");
+  });
+
+  it("keeps the codex out of earlier messages and the system prompt", () => {
+    const out = buildRaw([msg("player", "hi")], "", {}, { npcsMet: npcs });
+    expect(out.system[0]!.text).not.toContain("Orsik");
+    expect(out.system[0]!.text).toMatch(/Never re-emit \[PLACE\] or \[NPC\] for a name in the Index/);
   });
 });
 
@@ -212,7 +352,6 @@ describe("assemblePrompt system and state", () => {
   const character = { ...makeCharacter(), hp: { current: 7, max: 31, temp: 0 }, ac: 99 };
   const campaign = makeCampaign(character, {
     currentLocation: { name: "Zzyzx Hollow", description: "" },
-    rollingSummary: "UNIQUE-SUMMARY-TEXT",
     inWorldDay: 1,
   });
   const history = [msg("player", "Hello"), msg("dm", "Hi there."), msg("player", "I look around.")];
@@ -227,7 +366,7 @@ describe("assemblePrompt system and state", () => {
   });
 
   it("keeps every volatile value out of the system prompt, but keeps the world seed", () => {
-    for (const volatile of ["HP 7/31", "Zzyzx Hollow", "UNIQUE-SUMMARY-TEXT", "Ches 1492", "Aria", "<state>\n"]) {
+    for (const volatile of ["HP 7/31", "Zzyzx Hollow", "Ches 1492", "Aria", "<state>\n"]) {
       expect(staticPart.text).not.toContain(volatile);
     }
     expect(staticPart.text).toContain("seed-abc");
@@ -250,10 +389,9 @@ describe("assemblePrompt system and state", () => {
     }
   });
 
-  it("carries character, date, location and summary in the state block", () => {
+  it("carries character, date and location in the state block", () => {
     expect(state).toContain("HP 7/31");
     expect(state).toContain("Zzyzx Hollow");
-    expect(state).toContain("UNIQUE-SUMMARY-TEXT");
     expect(state).toContain("1 Ches 1492 DR (tenday 1)");
   });
 
@@ -261,7 +399,7 @@ describe("assemblePrompt system and state", () => {
     const hurt = assemblePrompt({
       setting: getWorld(),
       character: { ...character, hp: { current: 2, max: 31, temp: 0 } },
-      campaign: { ...campaign, inWorldDay: 9, rollingSummary: "changed" },
+      campaign: { ...campaign, inWorldDay: 9 },
       history,
     });
     expect(hurt.system).toEqual(out.system);

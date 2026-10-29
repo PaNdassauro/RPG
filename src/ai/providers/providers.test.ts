@@ -108,14 +108,14 @@ describe("buildAnthropicBody", () => {
       4096,
     );
     expect(body.system).toEqual([
-      { type: "text", text: "static", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "static", cache_control: { type: "ephemeral", ttl: "1h" } },
       { type: "text", text: "volatile" },
     ]);
     expect(body.messages).toEqual([
       { role: "user", content: "a" },
       {
         role: "assistant",
-        content: [{ type: "text", text: "b", cache_control: { type: "ephemeral" } }],
+        content: [{ type: "text", text: "b", cache_control: { type: "ephemeral", ttl: "1h" } }],
       },
       { role: "user", content: "c" },
     ]);
@@ -140,6 +140,54 @@ describe("Anthropic streaming", () => {
       { kind: "text", delta: "Hola" },
       { kind: "done", reason: "length" },
     ]);
+  });
+
+  it("sends the one-hour cache TTL on every breakpoint of the request body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(anthropicSse("end_turn")));
+    vi.stubGlobal("fetch", fetchMock);
+    await drain(
+      createAnthropicProvider({ apiKey: "k" }).streamCompletion({
+        system: [{ text: "static", cache: true }],
+        messages: [
+          { role: "user", content: "a", cache: true },
+          { role: "assistant", content: "b" },
+          { role: "user", content: "c" },
+        ],
+        tools: [],
+      }),
+    );
+    const sent = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as {
+      system: Array<{ cache_control?: unknown }>;
+      messages: Array<{ content: string | Array<{ cache_control?: unknown }> }>;
+    };
+    const breakpoints = [
+      sent.system[0]!.cache_control,
+      (sent.messages[0]!.content as Array<{ cache_control?: unknown }>)[0]!.cache_control,
+    ];
+    expect(breakpoints).toEqual([
+      { type: "ephemeral", ttl: "1h" },
+      { type: "ephemeral", ttl: "1h" },
+    ]);
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(Object.keys(headers).some((h) => h.toLowerCase() === "anthropic-beta")).toBe(false);
+  });
+
+  it("logs cache usage once per request", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        sseResponse([
+          `event: message_start\r\ndata: {"type":"message_start","message":{"usage":{"input_tokens":12,"cache_creation_input_tokens":300,"cache_read_input_tokens":4000}}}\r\n\r\n`,
+          `event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}\r\n\r\n`,
+          `event: message_delta\r\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}\r\n\r\n`,
+          `event: message_stop\r\ndata: {"type":"message_stop"}\r\n\r\n`,
+        ]),
+      ),
+    );
+    await drain(createAnthropicProvider({ apiKey: "k" }).streamCompletion(baseArgs));
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith("[anthropic] cache", { read: 4000, created: 300, input: 12 });
   });
 
   it("maps refusal", async () => {

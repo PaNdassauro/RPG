@@ -24,8 +24,6 @@ import {
 } from "./http";
 
 export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5";
-/** Cheap, fast model used for background work such as rolling summaries. */
-export const CHEAP_CLAUDE_MODEL = "claude-haiku-5-5";
 export const CLAUDE_MODEL_OPTIONS = [
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5 (recommended)" },
   { id: "claude-opus-5-5", label: "Opus 5.5 (richest prose, slowest)" },
@@ -84,10 +82,16 @@ export function modelRequestExtras(model: string): Record<string, unknown> {
 interface TextBlockParam {
   type: "text";
   text: string;
-  cache_control?: { type: "ephemeral" };
+  cache_control?: { type: "ephemeral"; ttl: "1h" };
 }
 
-const EPHEMERAL = { type: "ephemeral" } as const;
+/**
+ * One-hour cache on every breakpoint. A long session pauses for longer than the
+ * default five minutes between turns, and longer-TTL entries must come before
+ * shorter ones, which holds because every breakpoint (system, then history)
+ * uses the same TTL.
+ */
+const EPHEMERAL = { type: "ephemeral", ttl: "1h" } as const;
 
 function systemBlocks(system: string | SystemPart[]): TextBlockParam[] {
   const parts: SystemPart[] = typeof system === "string" ? [{ text: system, cache: true }] : system;
@@ -128,9 +132,19 @@ export function buildAnthropicBody(
   };
 }
 
+const UsageSchema = z
+  .object({
+    input_tokens: z.number().nullable().optional(),
+    cache_creation_input_tokens: z.number().nullable().optional(),
+    cache_read_input_tokens: z.number().nullable().optional(),
+  })
+  .passthrough();
+
 const StreamEventSchema = z
   .object({
     type: z.string(),
+    message: z.object({ usage: UsageSchema.optional() }).passthrough().optional(),
+    usage: UsageSchema.optional(),
     delta: z
       .object({
         type: z.string().optional(),
@@ -204,6 +218,22 @@ export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
       }
 
       let stopReason: string | null = null;
+      const usage = { read: 0, created: 0, input: 0 };
+      let usageSeen = false;
+      let usageLogged = false;
+      const noteUsage = (u: z.infer<typeof UsageSchema> | undefined) => {
+        if (!u) return;
+        // message_delta repeats totals, so later values replace earlier ones.
+        if (u.cache_read_input_tokens != null) usage.read = u.cache_read_input_tokens;
+        if (u.cache_creation_input_tokens != null) usage.created = u.cache_creation_input_tokens;
+        if (u.input_tokens != null) usage.input = u.input_tokens;
+        usageSeen = true;
+      };
+      const logUsage = () => {
+        if (usageLogged || !usageSeen) return;
+        usageLogged = true;
+        console.info("[anthropic] cache", { ...usage });
+      };
       try {
         for await (const sse of readSseEvents(response.body)) {
           if (sse.data === "[DONE]") continue;
@@ -217,13 +247,17 @@ export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
           if (!parsed.success) continue;
           const event = parsed.data;
 
-          if (event.type === "content_block_delta") {
+          if (event.type === "message_start") {
+            noteUsage(event.message?.usage);
+          } else if (event.type === "content_block_delta") {
             if (event.delta?.type === "text_delta" && typeof event.delta.text === "string") {
               yield { kind: "text", delta: event.delta.text };
             }
           } else if (event.type === "message_delta") {
             if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
+            noteUsage(event.usage);
           } else if (event.type === "message_stop") {
+            logUsage();
             yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
             return;
           } else if (event.type === "error") {
@@ -250,6 +284,7 @@ export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
         return;
       }
 
+      logUsage();
       if (args.signal?.aborted) {
         yield { kind: "done", reason: "aborted" };
         return;
