@@ -9,7 +9,8 @@
  *  - Setting: the Forgotten Realms (the only world)
  *  - Ability scores: standard array assigned to the class's primary stat
  *  - Skills: first N from the class's proficiency_choices.from.options
- *  - Equipment: empty start (the DM can grant gear in the opening scene)
+ *  - Equipment: the first option of each class equipment choice, plus the
+ *    background kit (the DM can grant more in the opening scene)
  */
 import { newId } from "@/lib/id";
 import { db } from "@/db/schema";
