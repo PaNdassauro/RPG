@@ -22,6 +22,8 @@
   --color-event: #c4b5fd;
 
   --font-display: "Cinzel", "Iowan Old Style", serif;
+  /* Long-form DM narration: Cinzel is capitals-only, so prose reads in a book serif. */
+  --font-narration: "EB Garamond", "Iowan Old Style", Georgia, serif;
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
 
