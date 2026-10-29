@@ -12,6 +12,7 @@ import {
   getSkill,
 } from "@/data/srd";
 import type { SrdClassLevel, SrdEquipment, SrdFeature } from "@/data/srd/types";
+import { effectiveHpMax } from "@/engine/conditions";
 import {
   abilityModifier,
   proficiencyBonus,
@@ -515,4 +516,11 @@ export function getSkillData(skill: SkillName) {
   };
   const idx = SKILL_INDEX_MAP[skill] ?? skill;
   return getSkill(idx);
+}
+
+// --- Hit points -----------------------------------------------------------
+
+/** HP ceiling for healing/rest: halved at exhaustion level 4+ (SRD). */
+export function effectiveMaxHp(char: Character): number {
+  return effectiveHpMax(char.hp.max, char.conditions);
 }

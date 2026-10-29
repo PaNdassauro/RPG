@@ -481,6 +481,12 @@ const ptBR = {
         "Mestre referenciou combatente desconhecido \"{id}\" — bloco descartado. Peça pra emitir [INITIATIVE] antes de mirar em NPCs.",
       warnNonPlayerCond:
         "Mestre aplicou condição rastreada em \"{id}\" — só target=player é suportado. Condição descartada.",
+      warnNoStats:
+        "Mestre listou \"{name}\" sem PV/CA completos e sem monstro SRD conhecido — valores ausentes assumem 10.",
+      warnTruncated:
+        "A resposta do Mestre foi cortada no limite de tamanho — o bloco inacabado foi ignorado.",
+      warnRefused:
+        "A IA se recusou a continuar esta cena. Tente reformular sua ação.",
       initiativeHeading: "Iniciativa",
       round: "Rodada {n}",
       initShort: "inic. {n}",

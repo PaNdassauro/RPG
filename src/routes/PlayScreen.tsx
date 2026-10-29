@@ -67,26 +67,15 @@ export function PlayScreen() {
     setSheetOpen(true);
   }
 
-  const abortRef = useRef<AbortController | null>(null);
+  // The session store owns the one in-flight turn (starting a turn aborts the
+  // previous one; reset() above aborts it on unmount), so no controller here.
   const turn = useCallback(
     async (playerInput: string, isFirstTurn: boolean) => {
       if (!campaign || !character) return;
-      // Abort any in-flight stream before starting another.
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      await runDmTurn({ playerInput, isFirstTurn, signal: controller.signal });
+      await runDmTurn({ playerInput, isFirstTurn });
     },
     [campaign, character],
   );
-
-  // Abort any in-flight DM stream when the play screen unmounts (navigation,
-  // refresh) so we don't burn provider tokens after the user has left.
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
 
   // Kick off the opening narration once — guarded against StrictMode double-mount.
   const openedForRef = useRef<string | null>(null);

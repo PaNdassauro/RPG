@@ -17,6 +17,8 @@ import {
 import { SRD_DATA_VERSION, getClass, getClassLevel, getRace, getSubrace } from "@/data/srd";
 import { STANDARD_ARRAY, deriveAbilities, deriveSheet } from "./derivedCharacter";
 import { initializeSlotsFromClasses } from "@/engine/spells";
+import { armorClass } from "./sheetDerived";
+import { buildStartingInventory } from "./startingEquipment";
 
 /**
  * Race-driven damage resistances (5e RAW). Kept narrow to what the SRD covers
@@ -144,7 +146,12 @@ export function finalizeCharacter(w: WizardSnapshot): Character {
     spellsPrepared: [],
     cantrips: [],
     spellSlots: undefined,
-    inventory: [],
+    inventory: buildStartingInventory({
+      classId: klass.index,
+      backgroundId: w.background.backgroundId,
+      classChoices: w.equipment.choices,
+      dexScore: totals.dex,
+    }),
     goldPieces: 0,
     currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
     conditions: [] as Condition[],
@@ -178,12 +185,16 @@ export function finalizeCharacter(w: WizardSnapshot): Character {
     return lvlEntry?.spellcasting ?? null;
   });
 
+  // The wizard only knows unarmored AC; now that the starting gear is on the
+  // sheet, store the real figure (armor, shield, Unarmored Defense).
+  const equipped: Character = { ...withSlots, ac: armorClass(withSlots).value };
+
   // Sanity check: proficiency bonus matches level
   const expectedPB = proficiencyBonus(w.classChoice.level);
   void expectedPB;
   void deriveAbilities;
   void ABILITIES;
-  return withSlots;
+  return equipped;
 }
 
 function resolveAbilityScores(abilities: WizardAbilities): AbilityScores {

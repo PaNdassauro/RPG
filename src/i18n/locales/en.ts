@@ -475,6 +475,12 @@ const en = {
         "DM referenced unknown combatant id \"{id}\" — block dropped. Ask the DM to emit [INITIATIVE] before targeting NPCs.",
       warnNonPlayerCond:
         "DM applied a tracked condition to \"{id}\" — only player targets are supported. Condition was dropped.",
+      warnNoStats:
+        "DM listed \"{name}\" without full HP/AC and no known SRD monster — missing values default to 10.",
+      warnTruncated:
+        "The DM's reply was cut off at the length limit — the unfinished block was ignored.",
+      warnRefused:
+        "The AI declined to continue this scene. Try rephrasing your action.",
       initiativeHeading: "Initiative",
       round: "Round {n}",
       initShort: "init {n}",

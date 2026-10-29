@@ -105,10 +105,12 @@ export function resolveDamage(
 export function resolveHealing(
   character: Pick<Character, "hp">,
   expression: string,
+  /** Healing cap when below `hp.max` (e.g. exhaustion level 4 halves it). */
+  maxHp: number = character.hp.max,
 ): HealResolution {
   const result = rollExpression(expression);
   const rolled = Math.max(0, result.total);
-  const newCurrent = Math.min(character.hp.max, character.hp.current + rolled);
+  const newCurrent = Math.max(character.hp.current, Math.min(maxHp, character.hp.current + rolled));
   const applied = newCurrent - character.hp.current;
 
   return {

@@ -14,41 +14,24 @@
  *  - Warlock pact slots refresh
  *  - Some class features refresh (Second Wind, Action Surge — tracked elsewhere)
  */
-import type { Character, Condition, HitDieEntry } from "@/schemas/character";
+import type { Character, HitDieEntry } from "@/schemas/character";
 import { abilityModifier } from "@/schemas/character";
+import { CLEAR_DEATH_SAVES } from "./deathSave";
 import { rollExpression } from "./dice";
+import { effectiveHpMax, exhaustionLevel, withExhaustionLevel } from "./conditions";
 import { resetAllSlots, resetWarlockSlots } from "./spells";
-
-const EXHAUSTION_ORDER: Condition[] = [
-  "exhaustion1",
-  "exhaustion2",
-  "exhaustion3",
-  "exhaustion4",
-  "exhaustion5",
-  "exhaustion6",
-];
-
-function downgradeExhaustion(conditions: Condition[]): Condition[] {
-  const filtered = conditions.filter((c) => !EXHAUSTION_ORDER.includes(c));
-  const current = conditions
-    .filter((c): c is Condition => EXHAUSTION_ORDER.includes(c))
-    .map((c) => EXHAUSTION_ORDER.indexOf(c) + 1);
-  const level = current.length ? Math.max(...current) : 0;
-  const next = level - 1;
-  if (next <= 0) return filtered;
-  return [...filtered, EXHAUSTION_ORDER[next - 1]!];
-}
 
 export function applyLongRest(char: Character): Character {
   const hitDice = recoverHitDice(char.hitDice);
-  const conditions = downgradeExhaustion(char.conditions);
+  const conditions = withExhaustionLevel(char.conditions, exhaustionLevel(char.conditions) - 1);
   const refilled = resetAllSlots(char);
   return {
     ...refilled,
-    hp: { ...char.hp, current: char.hp.max, temp: 0 },
+    // Healed to the post-rest maximum (still halved while exhaustion >= 4).
+    hp: { ...char.hp, current: effectiveHpMax(char.hp.max, conditions), temp: 0 },
     hitDice,
     conditions,
-    deathSaves: { successes: 0, failures: 0 },
+    deathSaves: { ...CLEAR_DEATH_SAVES },
     updatedAt: Date.now(),
   };
 }
@@ -83,7 +66,10 @@ export function spendHitDie(
   const result = rollExpression(`1d${entry.die}`);
   const conMod = abilityModifier(char.abilities.con);
   const healed = Math.max(1, result.total + conMod);
-  const newCurrent = Math.min(char.hp.max, char.hp.current + healed);
+  const newCurrent = Math.max(
+    char.hp.current,
+    Math.min(effectiveHpMax(char.hp.max, char.conditions), char.hp.current + healed),
+  );
   const nextHd: HitDieEntry[] = [...char.hitDice];
   nextHd[idx] = { ...entry, current: entry.current - 1 };
   const next: Character = {

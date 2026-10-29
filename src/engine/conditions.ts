@@ -47,25 +47,43 @@ const EFFECTS: Partial<Record<Condition, ConditionEffect>> = {
   stunned: { autoFailSaves: ["str", "dex"] },
   unconscious: { autoFailSaves: ["str", "dex"] },
   petrified: { autoFailSaves: ["str", "dex"] },
-  exhaustion1: { disadvantageCheck: true },
-  exhaustion3: { disadvantageAttack: true, disadvantageSave: true },
-  exhaustion4: { disadvantageAttack: true, disadvantageSave: true },
-  exhaustion5: { disadvantageAttack: true, disadvantageSave: true },
-  exhaustion6: { disadvantageAttack: true, disadvantageSave: true },
 };
 
-export type RollMode = "adv" | "dis" | null;
+export const EXHAUSTION_CONDITIONS: readonly Condition[] = [
+  "exhaustion1",
+  "exhaustion2",
+  "exhaustion3",
+  "exhaustion4",
+  "exhaustion5",
+  "exhaustion6",
+];
+
+/** Current exhaustion level (0-6). The highest `exhaustionN` flag wins. */
+export function exhaustionLevel(conditions: readonly Condition[]): number {
+  let level = 0;
+  for (const c of conditions) {
+    const idx = EXHAUSTION_CONDITIONS.indexOf(c);
+    if (idx + 1 > level) level = idx + 1;
+  }
+  return level;
+}
+
+/** Replace any exhaustion flag with the one for `level` (0 clears it). */
+export function withExhaustionLevel(conditions: readonly Condition[], level: number): Condition[] {
+  const rest = conditions.filter((c) => !EXHAUSTION_CONDITIONS.includes(c));
+  const clamped = Math.max(0, Math.min(6, Math.floor(level)));
+  return clamped > 0 ? [...rest, EXHAUSTION_CONDITIONS[clamped - 1]!] : rest;
+}
 
 /**
- * Combine a base mode (e.g. caller-imposed adv/dis) with the condition-
- * derived mode. If one of each is present, they cancel to null (5e RAW).
+ * Exhaustion effects are cumulative (SRD): level 4 halves the HP maximum.
+ * `hp.max` stays the true maximum; this is the cap healing/rest may reach.
  */
-function combine(a: RollMode, b: RollMode): RollMode {
-  if (a === b) return a;
-  if (!a) return b;
-  if (!b) return a;
-  return null; // adv + dis cancels
+export function effectiveHpMax(hpMax: number, conditions: readonly Condition[]): number {
+  return exhaustionLevel(conditions) >= 4 ? Math.max(1, Math.floor(hpMax / 2)) : hpMax;
 }
+
+export type RollMode = "adv" | "dis" | null;
 
 export interface ConditionModeArgs {
   conditions: Condition[];
@@ -86,22 +104,25 @@ export interface ConditionModeResult {
 
 export function applyConditionsToRoll(args: ConditionModeArgs): ConditionModeResult {
   const sources: Condition[] = [];
-  let mode: RollMode = args.base ?? null;
+  // 5e RAW: any number of advantage sources and any number of disadvantage
+  // sources cancel to a straight roll — counts never matter, only presence.
+  let hasAdv = args.base === "adv";
+  let hasDis = args.base === "dis";
   let autoFail = false;
   for (const c of args.conditions) {
     const eff = EFFECTS[c];
     if (!eff) continue;
     if (args.kind === "attack" && eff.disadvantageAttack) {
-      mode = combine(mode, "dis");
+      hasDis = true;
       sources.push(c);
     }
     if (args.kind === "check" && eff.disadvantageCheck) {
-      mode = combine(mode, "dis");
+      hasDis = true;
       sources.push(c);
     }
     if (args.kind === "save") {
       if (eff.disadvantageSave) {
-        mode = combine(mode, "dis");
+        hasDis = true;
         sources.push(c);
       }
       if (args.ability && eff.autoFailSaves?.includes(args.ability)) {
@@ -110,6 +131,19 @@ export function applyConditionsToRoll(args: ConditionModeArgs): ConditionModeRes
       }
     }
   }
+  // Exhaustion is cumulative: 1+ checks, 3+ attacks and saves (4-6 include 3).
+  const exLevel = exhaustionLevel(args.conditions);
+  const exSource = EXHAUSTION_CONDITIONS[exLevel - 1];
+  if (exSource) {
+    const disadvantaged =
+      (args.kind === "check" && exLevel >= 1) ||
+      ((args.kind === "attack" || args.kind === "save") && exLevel >= 3);
+    if (disadvantaged) {
+      hasDis = true;
+      sources.push(exSource);
+    }
+  }
+  const mode: RollMode = hasAdv && hasDis ? null : hasAdv ? "adv" : hasDis ? "dis" : null;
   return { mode, autoFail, sources };
 }
 
@@ -164,6 +198,33 @@ export function decrementConditionTimers(
   }
   const conditions = char.conditions.filter((c) => !expired.includes(c));
   return { conditions, conditionTimers: nextTimers, expired };
+}
+
+/** A round is 6 seconds, so 10 rounds is the one-minute mark. */
+const ROUNDS_PER_MINUTE = 10;
+
+/**
+ * Timers count combat rounds, which stop ticking when the fight ends. Settle
+ * them so a condition can't dangle forever: effects that would have run out
+ * within a minute expire (flag and timer both); longer ones keep the flag
+ * but lose the now-meaningless round counter, so the DM clears them
+ * narratively (same as an untimed [COND]).
+ */
+export function settleTimersAtCombatEnd(
+  char: { conditions: Condition[]; conditionTimers: import("@/schemas/character").ConditionTimer[] },
+): {
+  conditions: Condition[];
+  conditionTimers: import("@/schemas/character").ConditionTimer[];
+  expired: Condition[];
+} {
+  const expired = char.conditionTimers
+    .filter((t) => t.rounds <= ROUNDS_PER_MINUTE)
+    .map((t) => t.index);
+  return {
+    conditions: char.conditions.filter((c) => !expired.includes(c)),
+    conditionTimers: [],
+    expired,
+  };
 }
 
 /** Speed multiplier from conditions. Used to display effective speed in UI. */

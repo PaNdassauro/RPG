@@ -1,4 +1,5 @@
 import { ABILITIES, SKILLS, type Ability, type SkillName } from "@/schemas/character";
+import { parseExpression } from "@/engine/dice";
 
 /**
  * The DM uses a small markup vocabulary embedded in its prose so the engine
@@ -39,6 +40,95 @@ const ROUND_RE = /\[ROUND\s*\/?\]/gi;
 const INSPIRE_RE = /\[INSPIRE([^\]]*)\]([\s\S]*?)\[\/INSPIRE\]/gi;
 
 const DICE_EXPR_RE = /^\d+d\d+([+-]\d+)?$/;
+
+/** Every block-style tag the DM may open; used to spot truncated blocks. */
+const BLOCK_TAGS = [
+  "CHECK",
+  "SAVE",
+  "XP",
+  "FACTION",
+  "REP",
+  "SHOP",
+  "COMPANION",
+  "TRAVEL",
+  "ATTACK",
+  "DAMAGE",
+  "HEAL",
+  "INITIATIVE",
+  "ENDCOMBAT",
+  "REACTION",
+  "PLACE",
+  "NPC",
+  "QUEST",
+  "LEVELUP",
+  "DISPOSITION",
+  "COND",
+  "INSPIRE",
+] as const;
+const ALL_TAGS: readonly string[] = [...BLOCK_TAGS, "ROUND"];
+
+/** An opener (possibly cut off mid-attribute) that never found its closer. */
+const UNCLOSED_OPENER_RE = new RegExp(`\\[(?:${BLOCK_TAGS.join("|")})(?=[\\s\\]]|$)[^\\]]*(?:\\]|$)`, "i");
+const STRAY_CLOSER_RE = new RegExp(`\\[\\/(?:${ALL_TAGS.join("|")})\\]`, "gi");
+
+/** True for a dice expression the engine can actually roll (`2d6+3`). */
+function isValidDice(expr: string): boolean {
+  if (!DICE_EXPR_RE.test(expr)) return false;
+  try {
+    parseExpression(expr);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Parse an integer attribute, rejecting NaN; clamps into [min, max]. */
+function intIn(raw: unknown, min: number, max: number): number | null {
+  const n = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+/**
+ * Drop everything from the first block that was opened but never closed —
+ * what a max-token cut-off leaves behind — plus a dangling partial tag at the
+ * very end (`[CHE`). Complete blocks are untouched.
+ */
+export function stripUnclosedMarkup(text: string): string {
+  // Closed blocks are blanked first (same length) so a `[CHECK…]` that did
+  // close is never mistaken for an opener, and offsets still map to `text`.
+  const masked = text.replace(
+    new RegExp(`\\[(${BLOCK_TAGS.join("|")})[^\\]]*\\][\\s\\S]*?\\[\\/\\1\\]`, "gi"),
+    (m) => " ".repeat(m.length),
+  );
+  const open = UNCLOSED_OPENER_RE.exec(masked);
+  let out = open ? text.slice(0, open.index) : text;
+  // A bare `[` + a prefix of a known tag at the very end (`[CHE`).
+  const tail = /\[\/?([A-Za-z]*)$/.exec(out);
+  let partial = false;
+  if (tail && ALL_TAGS.some((tag) => tag.startsWith(tail[1]!.toUpperCase()))) {
+    out = out.slice(0, tail.index);
+    partial = true;
+  }
+  return open || partial ? out.trimEnd() : out;
+}
+
+/** Tolerate ```json fences and prose around a JSON payload. */
+function parseJsonPayload(raw: string): unknown {
+  const unfenced = raw
+    .trim()
+    .replace(/^```[a-zA-Z]*\s*/, "")
+    .replace(/\s*```$/, "")
+    .trim();
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    const first = unfenced.search(/[[{]/);
+    const last = Math.max(unfenced.lastIndexOf("]"), unfenced.lastIndexOf("}"));
+    if (first < 0 || last <= first) throw new Error("no JSON payload");
+    return JSON.parse(unfenced.slice(first, last + 1));
+  }
+}
 
 type CombatTarget = "player" | string;
 
@@ -135,8 +225,9 @@ export interface ParsedInitiativeEntry {
   id: string;
   kind: "pc" | "monster";
   name: string;
-  hpMax: number;
-  ac: number;
+  /** null when the DM gave none (only allowed with an `srdRef` to ground it). */
+  hpMax: number | null;
+  ac: number | null;
   initiative: number;
   /** SRD monster index (e.g. "goblin") — engine grounds HP/AC/resistances. */
   srdRef?: string;
@@ -312,8 +403,8 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
   for (const match of text.matchAll(XP_RE)) {
     const attrs = parseAttributes(match[1] ?? "");
     const reason = (match[2] ?? "").trim();
-    const amount = attrs.amount != null ? Number.parseInt(attrs.amount, 10) : NaN;
-    if (!Number.isFinite(amount) || amount < 0) continue;
+    const amount = intIn(attrs.amount, 0, 355_000);
+    if (amount === null) continue;
     xpAwards.push({ amount, reason });
   }
 
@@ -331,8 +422,8 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const attrs = parseAttributes(match[1] ?? "");
     const reason = (match[2] ?? "").trim();
     const faction = (attrs.faction ?? "").trim();
-    const delta = attrs.delta != null ? Number.parseInt(attrs.delta, 10) : NaN;
-    if (!faction || !Number.isFinite(delta)) continue;
+    const delta = intIn(attrs.delta, -100, 100);
+    if (!faction || delta === null) continue;
     reps.push({ faction, delta, reason });
   }
 
@@ -345,7 +436,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const payload = (shopMatch[2] ?? "").trim();
     if (vendorName && payload) {
       try {
-        const json = JSON.parse(payload);
+        const json = parseJsonPayload(payload);
         const list = Array.isArray(json)
           ? json
           : Array.isArray((json as Record<string, unknown>)?.offers)
@@ -359,16 +450,16 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
             const o = item as Record<string, unknown>;
             const n = typeof o.name === "string" ? o.name.trim() : "";
             if (!n) continue;
-            const price = Number(o.priceGp ?? o.price ?? 0);
-            if (!Number.isFinite(price) || price < 0) continue;
-            const qty = Math.max(1, Math.floor(Number(o.qty ?? 1)));
+            const price = intIn(o.priceGp ?? o.price ?? 0, Number.MIN_SAFE_INTEGER, 1_000_000);
+            if (price === null || price < 0) continue; // a negative price would pay the player
+            const qty = intIn(o.qty ?? 1, 1, 999) ?? 1;
             offers.push({
               id: typeof o.id === "string" && o.id.trim()
                 ? o.id.trim()
                 : `off_${++auto}_${n.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
               name: n,
               description: typeof o.description === "string" ? o.description : "",
-              priceGp: Math.floor(price),
+              priceGp: price,
               qty,
             });
           }
@@ -391,24 +482,22 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
       kindRaw === "familiar" || kindRaw === "summon" || kindRaw === "mount"
         ? kindRaw
         : "hireling";
-    const hpMax = Number(attrs.hp ?? attrs.hpmax ?? 0);
-    const ac = Number(attrs.ac ?? 10);
-    const initiativeBonus = Number(attrs.init ?? 0);
-    if (!Number.isFinite(hpMax) || hpMax < 1) continue;
+    const hpMax = intIn(attrs.hp ?? attrs.hpmax, 1, 9999);
+    if (hpMax === null) continue;
     const entry: ParsedCompanion = {
       name,
       kind,
       description,
-      hpMax: Math.floor(hpMax),
-      ac: Math.max(1, Math.floor(ac)),
-      initiativeBonus: Math.floor(initiativeBonus),
+      hpMax,
+      ac: intIn(attrs.ac, 1, 30) ?? 10,
+      initiativeBonus: intIn(attrs.init, -10, 20) ?? 0,
     };
-    if (attrs.damage && attrs.tohit != null) {
+    if (attrs.damage && attrs.tohit != null && isValidDice(attrs.damage.trim())) {
       entry.attack = {
         name: attrs.attack ?? `${name} attack`,
-        toHit: Number.parseInt(attrs.tohit, 10) || 0,
-        damage: attrs.damage,
-        damageType: attrs.type ?? "bludgeoning",
+        toHit: intIn(attrs.tohit, -10, 30) ?? 0,
+        damage: attrs.damage.trim(),
+        damageType: (attrs.type ?? "bludgeoning").toLowerCase(),
       };
     }
     companions.push(entry);
@@ -418,7 +507,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
   for (const match of text.matchAll(TRAVEL_RE)) {
     const attrs = parseAttributes(match[1] ?? "");
     const reason = (match[2] ?? "").trim();
-    const days = Math.max(1, Math.floor(Number(attrs.days ?? 1)));
+    const days = intIn(attrs.days ?? 1, 1, 365) ?? 1;
     const destination = (attrs.to ?? attrs.destination ?? "").trim();
     travels.push({ days, destination, reason });
   }
@@ -428,14 +517,13 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const attrs = parseAttributes(match[1] ?? "");
     const reason = (match[2] ?? "").trim();
     const target = (attrs.target ?? "player").trim() || "player";
-    const toHitRaw = attrs.tohit ?? attrs.bonus;
-    const toHit = toHitRaw != null ? Number.parseInt(toHitRaw, 10) : NaN;
+    const toHit = intIn(attrs.tohit ?? attrs.bonus, -10, 30);
     const damage = (attrs.damage ?? attrs.dice ?? "").trim();
     const damageType = (attrs.type ?? "untyped").trim().toLowerCase() || "untyped";
     const modeRaw = (attrs.mode ?? "none").toLowerCase();
     const mode = modeRaw === "adv" ? "adv" : modeRaw === "dis" ? "dis" : null;
-    if (!Number.isFinite(toHit)) continue;
-    if (!DICE_EXPR_RE.test(damage)) continue;
+    if (toHit === null) continue;
+    if (!isValidDice(damage)) continue;
     attacks.push({ target, toHit, mode, damage, damageType, reason });
   }
 
@@ -446,7 +534,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const target = (attrs.target ?? "player").trim() || "player";
     const expression = (attrs.dice ?? "").trim();
     const damageType = (attrs.type ?? "untyped").trim().toLowerCase() || "untyped";
-    if (!DICE_EXPR_RE.test(expression)) continue;
+    if (!isValidDice(expression)) continue;
     damages.push({ target, expression, damageType, reason });
   }
 
@@ -456,7 +544,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const reason = (match[2] ?? "").trim();
     const target = (attrs.target ?? "player").trim() || "player";
     const expression = (attrs.dice ?? "").trim();
-    if (!DICE_EXPR_RE.test(expression)) continue;
+    if (!isValidDice(expression)) continue;
     heals.push({ target, expression, reason });
   }
 
@@ -539,8 +627,8 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const attrs = parseAttributes(match[1] ?? "");
     const reason = (match[2] ?? "").trim();
     const npc = (attrs.npc ?? attrs.name ?? "").trim();
-    const delta = attrs.delta != null ? Number.parseInt(attrs.delta, 10) : NaN;
-    if (!npc || !Number.isFinite(delta) || delta === 0) continue;
+    const delta = intIn(attrs.delta, -2, 2);
+    if (!npc || delta === null || delta === 0) continue;
     dispositions.push({ npc, delta, reason });
   }
 
@@ -550,9 +638,9 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const reason = (match[2] ?? "").trim();
     const target = (attrs.target ?? "player").trim() || "player";
     const index = (attrs.apply ?? attrs.condition ?? "").trim().toLowerCase();
-    const rawRounds = attrs.rounds != null ? Number.parseInt(attrs.rounds, 10) : NaN;
+    const rawRounds = intIn(attrs.rounds, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
     if (!CONDITION_NAMES.has(index)) continue;
-    if (!Number.isFinite(rawRounds) || rawRounds < 1) continue;
+    if (rawRounds === null || rawRounds < 1) continue;
     // Clamp instead of drop: "1 hour" = ~600 rounds becomes 100.
     const rounds = Math.min(100, rawRounds);
     const cond: ParsedCondition = {
@@ -564,11 +652,9 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     if (attrs.saveend ?? attrs["save-end"]) {
       const raw = (attrs.saveend ?? attrs["save-end"])!.toLowerCase();
       const m = raw.match(/^(str|dex|con|int|wis|cha):(\d+)$/);
-      if (m) {
-        cond.saveEnd = {
-          ability: m[1] as Ability,
-          dc: Number.parseInt(m[2]!, 10),
-        };
+      const saveDc = m ? intIn(m[2], 1, 40) : null;
+      if (m && saveDc !== null) {
+        cond.saveEnd = { ability: m[1] as Ability, dc: saveDc };
       }
     }
     if (attrs.source) cond.source = attrs.source;
@@ -587,29 +673,32 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     inspires.push({ reason });
   }
 
-  const cleaned = text
-    .replace(CHECK_RE, "")
-    .replace(SAVE_RE, "")
-    .replace(XP_RE, "")
-    .replace(ATTACK_RE, "")
-    .replace(DAMAGE_RE, "")
-    .replace(HEAL_RE, "")
-    .replace(INITIATIVE_RE, "")
-    .replace(REACTION_RE, "")
-    .replace(PLACE_RE, "")
-    .replace(NPC_RE, "")
-    .replace(QUEST_RE, "")
-    .replace(FACTION_RE, "")
-    .replace(REP_RE, "")
-    .replace(SHOP_RE, "")
-    .replace(COMPANION_RE, "")
-    .replace(TRAVEL_RE, "$2")
-    .replace(LEVELUP_RE, "$2")
-    .replace(DISPOSITION_RE, "")
-    .replace(COND_RE, "")
-    .replace(ROUND_RE, "")
-    .replace(INSPIRE_RE, "")
-    .replace(ENDCOMBAT_RE, "$1")
+  const cleaned = stripUnclosedMarkup(
+    text
+      .replace(CHECK_RE, "")
+      .replace(SAVE_RE, "")
+      .replace(XP_RE, "")
+      .replace(ATTACK_RE, "")
+      .replace(DAMAGE_RE, "")
+      .replace(HEAL_RE, "")
+      .replace(INITIATIVE_RE, "")
+      .replace(REACTION_RE, "")
+      .replace(PLACE_RE, "")
+      .replace(NPC_RE, "")
+      .replace(QUEST_RE, "")
+      .replace(FACTION_RE, "")
+      .replace(REP_RE, "")
+      .replace(SHOP_RE, "")
+      .replace(COMPANION_RE, "")
+      .replace(TRAVEL_RE, "$2")
+      .replace(LEVELUP_RE, "$2")
+      .replace(DISPOSITION_RE, "")
+      .replace(COND_RE, "")
+      .replace(ROUND_RE, "")
+      .replace(INSPIRE_RE, "")
+      .replace(ENDCOMBAT_RE, "$1")
+      .replace(STRAY_CLOSER_RE, ""),
+  )
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
@@ -642,7 +731,8 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
 
 function parseAttributes(input: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const re = /(\w+)=(?:"([^"]*)"|(\S+))/g;
+  // Hyphenated keys (`save-end=`) are valid attribute names.
+  const re = /([\w-]+)=(?:"([^"]*)"|(\S+))/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(input)) !== null) {
     const key = m[1]!.toLowerCase();
@@ -665,7 +755,7 @@ function parseInitiativePayload(raw: string): ParsedInitiative | null {
   if (!trimmed) return null;
   let json: unknown;
   try {
-    json = JSON.parse(trimmed);
+    json = parseJsonPayload(trimmed);
   } catch {
     return null;
   }
@@ -678,6 +768,7 @@ function parseInitiativePayload(raw: string): ParsedInitiative | null {
   if (!list || list.length === 0) return null;
 
   const entries: ParsedInitiativeEntry[] = [];
+  const usedIds = new Set<string>();
   let auto = 0;
   for (const item of list) {
     if (typeof item !== "object" || item === null) continue;
@@ -693,26 +784,34 @@ function parseInitiativePayload(raw: string): ParsedInitiative | null {
           ? o.srd
           : "";
     const srdRef = srdRefRaw.trim().toLowerCase() || undefined;
-    const hpMax = Number(o.hpMax ?? o.hp ?? 0);
-    const ac = Number(o.ac ?? 10);
-    const initiative = Number(o.initiative ?? 0);
-    // When a monster is grounded by srdRef the engine fills HP/AC, so missing
-    // or placeholder values are tolerated. Otherwise both are required.
+    const hpMax = intIn(o.hpMax ?? o.hp, 1, 9999);
+    const ac = intIn(o.ac, 1, 40);
+    const initiative = intIn(o.initiative ?? 0, -10, 50);
+    // Stats the DM supplied are kept even when an `srdRef` is also given: the
+    // engine prefers the SRD record, but if the ref doesn't resolve these are
+    // all that's left. Without a ref both are required (the player entry's
+    // are overwritten from the sheet, so it may omit them).
     const grounded = kind === "monster" && !!srdRef;
-    if (!grounded && (!Number.isFinite(hpMax) || hpMax < 1)) continue;
-    if (!grounded && (!Number.isFinite(ac) || ac < 1)) continue;
-    if (!Number.isFinite(initiative)) continue;
-    const id =
+    if (!grounded && kind === "monster" && (hpMax === null || ac === null)) continue;
+    if (initiative === null) continue;
+    const baseId =
       typeof o.id === "string" && o.id.trim()
         ? o.id.trim()
         : `c_${++auto}_${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`;
+    // Ids address combatants in [ATTACK]/[DAMAGE]; "player" is reserved and
+    // duplicates would make both rows take the same hit.
+    let id = baseId;
+    for (let n = 2; usedIds.has(id) || (kind === "monster" && id.toLowerCase() === "player"); n++) {
+      id = `${baseId}-${n}`;
+    }
+    usedIds.add(id);
     entries.push({
       id,
       kind,
       name,
-      hpMax: Number.isFinite(hpMax) && hpMax >= 1 ? Math.floor(hpMax) : 1,
-      ac: Number.isFinite(ac) && ac >= 1 ? Math.floor(ac) : 10,
-      initiative: Math.floor(initiative),
+      hpMax,
+      ac,
+      initiative,
       ...(srdRef ? { srdRef } : {}),
     });
   }

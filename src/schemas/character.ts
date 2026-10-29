@@ -122,6 +122,8 @@ export type HitDieEntry = z.infer<typeof HitDieEntrySchema>;
 export const DeathSavesSchema = z.object({
   successes: z.number().int().min(0).max(3),
   failures: z.number().int().min(0).max(3),
+  /** True once stabilized at 0 HP: no death saves until healed or hurt again. */
+  stable: z.boolean().optional(),
 });
 export type DeathSaves = z.infer<typeof DeathSavesSchema>;
 
