@@ -182,8 +182,6 @@ function buildSystemPrompt({ setting, character, campaign }: AssembleArgs): stri
     ? `\n- Spellcasting: ${sc.ability.toUpperCase()} · save DC ${sc.saveDc} · attack ${sc.attackBonus >= 0 ? "+" : ""}${sc.attackBonus}${sc.slots.length > 0 ? ` · slots ${sc.slots.map((s) => `L${s.level}×${s.max}`).join(", ")}` : ""}`
     : "";
 
-  const customDesc = campaign.customSettingDescription?.trim();
-
   const language = dmLanguageTag();
 
   const conditionsLine =
@@ -226,7 +224,7 @@ You are an experienced DM at a real table — equal parts cinematic narrator and
 **Stay in frame.** No model-style apologies. No meta voice ("as the DM, I will..."). You are the DM. Speak as one.
 
 # Setting
-${setting.dmSeed}${customDesc ? `\n\n## The player's own world details\n${customDesc}` : ""}
+${setting.dmSeed}
 
 # Player character
 - Name: ${character.name}

@@ -3,7 +3,7 @@ import { useWizardStore } from "@/state/wizardStore";
 import { deriveSheet } from "@/state/derivedCharacter";
 import { ABILITIES, type Ability } from "@/schemas/character";
 import { getClass, getRace, getSubrace, getBackground } from "@/data/srd";
-import { getSetting } from "@/data/settings";
+import { getWorld } from "@/data/settings";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/cn";
 
@@ -17,10 +17,10 @@ export function LiveSheet() {
     wis: t("wizard.abilities.wis").slice(0, 3).toUpperCase(),
     cha: t("wizard.abilities.cha").slice(0, 3).toUpperCase(),
   };
-  const { setting, identity, race, classChoice, background, abilities } = useWizardStore();
+  const { identity, race, classChoice, background, abilities } = useWizardStore();
   const sheet = deriveSheet({ race, classChoice, abilities });
 
-  const settingData = getSetting(setting.settingId);
+  const world = getWorld();
   const raceData = race.raceId ? getRace(race.raceId) : undefined;
   const subraceData = race.subraceId ? getSubrace(race.subraceId) : undefined;
   const classData = classChoice.classId ? getClass(classChoice.classId) : undefined;
@@ -34,14 +34,12 @@ export function LiveSheet() {
 
   return (
     <aside className="sticky top-6 flex w-full flex-col gap-5 rounded-md border border-line bg-surface/40 p-5 backdrop-blur">
-      {settingData && (
-        <div className="-mx-2 -mt-2 rounded-md bg-surface/60 px-3 py-2">
-          <p className="font-display text-[9px] uppercase tracking-[0.4em] text-text-muted">
-            {t("liveSheet.world")}
-          </p>
-          <p className="mt-0.5 font-display text-sm text-accent">{settingData.name}</p>
-        </div>
-      )}
+      <div className="-mx-2 -mt-2 rounded-md bg-surface/60 px-3 py-2">
+        <p className="font-display text-[9px] uppercase tracking-[0.4em] text-text-muted">
+          {t("liveSheet.world")}
+        </p>
+        <p className="mt-0.5 font-display text-sm text-accent">{world.name}</p>
+      </div>
 
       <div>
         <p className="font-display text-[10px] uppercase tracking-[0.4em] text-accent-muted">

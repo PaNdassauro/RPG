@@ -5,7 +5,7 @@
  */
 import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
-import { getSetting, type SettingId } from "@/data/settings";
+import { getWorld, type CampaignSetting } from "@/data/settings";
 import { assemblePrompt } from "@/ai/promptAssembly";
 import { createAnthropicProvider } from "@/ai/providers/anthropic";
 import { createOpenAIProvider } from "@/ai/providers/openai";
@@ -45,11 +45,7 @@ export async function runDmTurn(args: RunDmTurnArgs): Promise<void> {
   const { campaign, character, messages } = session;
   if (!campaign || !character) return;
 
-  const setting = getSetting(campaign.settingId as SettingId);
-  if (!setting) {
-    session.setError(t("errors.noSetting"));
-    return;
-  }
+  const setting = getWorld();
 
   // Safety net: if the encounter is in a dead state (every enemy at 0 HP)
   // — e.g. the DM forgot to emit [ENDCOMBAT] last turn — close it before
@@ -75,7 +71,7 @@ export async function runDmTurn(args: RunDmTurnArgs): Promise<void> {
 
     const events = provider
       ? streamFromProvider(provider, args, setting, character, campaign, messages)
-      : streamFromStub(args, setting, character);
+      : streamFromStub(args, character);
 
     for await (const ev of events) {
       if (ev.kind === "text" && ev.delta) {
@@ -790,7 +786,7 @@ function pickProvider(): LLMProvider | null {
 async function* streamFromProvider(
   provider: LLMProvider,
   args: RunDmTurnArgs,
-  setting: ReturnType<typeof getSetting> & object,
+  setting: CampaignSetting,
   character: NonNullable<ReturnType<typeof useSessionStore.getState>["character"]>,
   campaign: NonNullable<ReturnType<typeof useSessionStore.getState>["campaign"]>,
   history: ReturnType<typeof useSessionStore.getState>["messages"],
@@ -815,11 +811,9 @@ async function* streamFromProvider(
 
 async function* streamFromStub(
   args: RunDmTurnArgs,
-  setting: ReturnType<typeof getSetting> & object,
   character: NonNullable<ReturnType<typeof useSessionStore.getState>["character"]>,
 ): AsyncIterable<StreamEvent> {
   for await (const ev of stubDmTurn({
-    setting,
     character,
     playerInput: args.playerInput,
     isFirstTurn: args.isFirstTurn,

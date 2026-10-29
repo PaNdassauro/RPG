@@ -7,7 +7,7 @@ import {
   deleteCampaign,
   type CampaignSummary,
 } from "@/state/campaignsLoader";
-import { getSetting, type SettingId } from "@/data/settings";
+import { getWorld } from "@/data/settings";
 import { getRace, getSubrace, getClass } from "@/data/srd";
 import { getPortrait } from "@/data/portraits";
 import { formatRelativeTime } from "@/lib/relativeTime";
@@ -126,7 +126,6 @@ function CampaignCard({
   const t = useT();
   const navigate = useNavigate();
   const { campaign, character, messageCount } = summary;
-  const setting = getSetting(campaign.settingId as SettingId);
 
   const race = character?.raceId ? getRace(character.raceId) : null;
   const subrace = character?.subraceId ? getSubrace(character.subraceId) : null;
@@ -156,7 +155,7 @@ function CampaignCard({
 
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted">
-            {setting?.name ?? "—"}
+            {getWorld().name}
           </p>
           <h3 className="mt-0.5 truncate font-display text-lg text-text">
             {character?.name ?? "—"}

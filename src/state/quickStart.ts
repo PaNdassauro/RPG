@@ -6,7 +6,7 @@
  *  - Race: human (no subrace pick required)
  *  - Background: acolyte (works for any class lore-wise; players can rename
  *    in story later)
- *  - Setting: Ashfall (the bespoke default)
+ *  - Setting: the Forgotten Realms (the only world)
  *  - Ability scores: standard array assigned to the class's primary stat
  *  - Skills: first N from the class's proficiency_choices.from.options
  *  - Equipment: empty start (the DM can grant gear in the opening scene)
@@ -15,7 +15,7 @@ import { newId } from "@/lib/id";
 import { db } from "@/db/schema";
 import { finalizeCharacter, type WizardSnapshot } from "@/state/finalizeCharacter";
 import { getClass } from "@/data/srd";
-import { DEFAULT_SETTING_ID } from "@/data/settings";
+import { FORGOTTEN_REALMS_ID } from "@/data/settings";
 import type { Ability, SkillName } from "@/schemas/character";
 import type { Campaign } from "@/schemas/campaign";
 
@@ -128,7 +128,7 @@ export async function createQuickStartCampaign(
     title: `${trimmedName}'s Tale`,
     characterId: character.id,
     worldSeed: newId(),
-    settingId: DEFAULT_SETTING_ID,
+    settingId: FORGOTTEN_REALMS_ID,
     currentLocation: { name: "An Unknown Threshold", description: "" },
     inWorldDay: 1,
     quests: [],

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const en = {
   common: {
     back: "Back",
@@ -13,7 +12,7 @@ const en = {
 
   title: {
     tagline: "An AI-guided adventure",
-    name: "Ashfall",
+    name: "Forgotten Realms",
     intro:
       "Forge a hero of the 5e tradition. Roll the bones. Let an unseen storyteller weave the world around your choices.",
     continueLabel: "Continue",
@@ -31,12 +30,12 @@ const en = {
     eyebrow: "Skip the wizard",
     title: "Quick start",
     intro:
-      "Pick a name and a class. The rest becomes a human acolyte with a standard array, set in Ashfall. You can reshape the story with the DM later.",
+      "Pick a name and a class. The rest becomes a human acolyte with a standard array, somewhere on the Sword Coast. You can reshape the story with the DM later.",
     nameLabel: "Character name",
     namePlaceholder: "e.g. Kael, Vex, Mira…",
     classLabel: "Class",
     defaultsHint:
-      "Race: human · Background: acolyte · Abilities: standard array (15 in primary) · Setting: Ashfall · 5 rations in pack.",
+      "Race: human · Background: acolyte · Abilities: standard array (15 in primary) · World: Forgotten Realms · 5 rations in pack.",
     startButton: "Begin adventure",
     creating: "Forging…",
   },
@@ -131,7 +130,6 @@ const en = {
     flavor: "5e Tradition",
     forge: "Forge",
     stepNav: {
-      setting: "World",
       identity: "Identity",
       race: "Heritage",
       class: "Calling",
@@ -144,16 +142,6 @@ const en = {
     nav: {
       back: "Back",
       continue: "Continue",
-    },
-    settingStep: {
-      title: "Where does this story unfold?",
-      description:
-        "The world colors everything — the weight of magic, what monsters are common, how strangers greet a stranger. Pick a setting and the dungeon master will run within it.",
-      recommended: "Recommended",
-      customLabel: "Describe your world",
-      customPlaceholder:
-        "A dying empire on the back of a sleeping titan. A coast where the sea has begun to dream. Whatever feels true.",
-      customHint: "At least 12 characters. The DM uses this verbatim as setting truth.",
     },
     identityStep: {
       title: "Who do you become?",
@@ -655,19 +643,9 @@ const en = {
   errors: {
     campaignNotFound: "Campaign not found",
     characterNotFound: "Character not found",
-    noSetting: "This campaign has no setting attached.",
   },
 
   settingsContent: {
-    ashfall: {
-      name: "Ashfall",
-      tagline: "A bespoke dark fantasy world.",
-      blurb:
-        "The sun has not been seen in seven years. Cinder roses bloom over the bones of older empires; their petals stain the snow. The Hollow Roads run between valleys nobody owns anymore, and the things that walk them are older than language. Magic still works — some say it works better — but every spell costs a little more than it used to.",
-      themes: ["Grim", "Slow-burn", "Quiet horror", "Lost ages"],
-      dmSeed:
-        "The campaign is set in **Ashfall**, a bespoke dark-fantasy world. Seven years ago, the sun went quiet behind a permanent ash haze; nobody knows why, and the few sages who do refuse to speak. The world is in its long dusk: kingdoms have shrunk to walled towns, the ruined Empire of Vaerell sleeps beneath silver lakes, and the Hollow Roads connecting valleys are unsafe at any hour. Magic still functions, but feels older and more reluctant — every casting comes with a small unwanted echo. Tone is grim but not nihilist. Stakes are intimate. Hope exists, but is paid for.",
-    },
     forgottenRealms: {
       name: "Forgotten Realms",
       tagline: "The classic Dungeons & Dragons setting.",
@@ -677,49 +655,20 @@ const en = {
       dmSeed:
         "The campaign is set in the **Forgotten Realms** — Faerûn — the canonical Dungeons & Dragons setting. The world is high fantasy and high magic: gods are real and active, dragons are real, the Underdark is a literal place beneath the surface, and adventurers are an established profession. Common starting points include the Sword Coast (Waterdeep, Baldur's Gate, Neverwinter), the Dalelands, and the Moonsea. Tone is heroic — characters are expected to rise. Use canonical Faerûnian flavor: Mystra and the Weave, Selûne and Shar, the Harpers, the Zhentarim. Avoid copying any specific published adventure verbatim — improvise within the setting's idiom.",
     },
-    custom: {
-      name: "Tell me your own",
-      tagline: "Describe a world and the DM runs it.",
-      blurb:
-        "If neither speaks to you, write a paragraph. A single sentence will do — 'a dying empire on the back of a sleeping titan,' 'a city that burns once a year and rebuilds itself,' 'a coast where the sea has begun to dream' — and the DM weaves a campaign around it.",
-      themes: ["Yours"],
-      dmSeed:
-        "The campaign uses a custom setting described by the player at character creation. Honor the player's worldbuilding details. Where they have not specified, default to a low-to-mid magic dark-fantasy tone unless their description suggests otherwise. Treat the player's own description as the canonical truth of this world.",
-    },
   },
 
   stubDm: {
-    openings: {
-      ashfall: [
-        "The road into Greyhollow is a thin grey ribbon under a thinner grey sky. Ash falls the way old snow used to — slow, patient, intent on burying everything. {name} pulls a cloak tighter and sees, at the bend ahead, an inn with one warm window and a sign that has long since stopped meaning anything. The wind smells of cold iron and burnt cedar.\n\nWhat do you do?",
-        "Three days out from the last village and the cinder roses have begun. {name} watches them push up through the silver-burned earth at the trail's edge: small, stubborn, the colour of old wounds. Somewhere ahead a bell rings once and stops, as if it remembered itself. The sky does not change. It hasn't, not really, in seven years.\n\nWhat do you do?",
-        "The chapel at the crossroads has been empty for a decade, but tonight there is a candle burning in its single window. {name} sees it from the ridge — a small steady flame against the long blue dusk. There are no horses tied outside. There are no footprints in the ash leading to the door.\n\nWhat do you do?",
-      ],
-      "forgotten-realms": [
-        "The Sword Coast in late autumn — the road from Daggerford to Waterdeep is busy with merchant carts and tired pilgrims, and the sea wind carries the salt-and-tar smell of the harbour ahead. {name} rounds a bluff and sees the great city for the first time today: white walls catching the last light, ten thousand chimneys breathing thin smoke into the violet sky.\n\nA caravan master at the gate is shouting at someone. A child runs past with a hot pastry. A noble's carriage clatters by, late for somewhere.\n\nWhat do you do?",
-        "The Yawning Portal smells of hearth-smoke, old ale, and damp stone where the great well descends into the dungeon below. {name} pushes through the door and the room turns — only briefly, only the way taverns turn for new arrivals — and then turns back to its drinking. A halfling at the bar lifts a tankard. The bouncer, a half-orc with a kind face, nods once.\n\nWhat do you do?",
-        "Dawn over the Trade Way. {name} walks at the head of a small caravan that paid for protection: three wagons, two guards, one nervous merchant. The fields of Amn are still in their last sleep, the dew silver on every blade. A hawk's cry, far up. And then — far off, half-imagined — a horn answering it. Or a horn calling it.\n\nWhat do you do?",
-      ],
-      custom: [
-        "The world settles into its first true shape around {name}. Take a breath; describe what they see, who they meet, what they do.\n\n(The dungeon master will follow your lead.)",
-      ],
-    },
-    reflections: {
-      ashfall: [
-        "{name} moves, and the ash answers — a small grey settling, a small grey rising. {echo} hangs in the cold air a moment longer than it should. Somewhere not far enough, something hears it and does not move.\n\nThe world considers them. The world does not, yet, decide.",
-        "The choice is made: {echo}. {name} feels it the way a stone feels the river — not deciding, only being decided around. A wind comes up. The cinder roses lean.\n\nA shape, ahead, that wasn't there before.",
-        "Whatever else happens here, {name} will remember saying {echo} — the way the cold made the words brittle, the way no one answered straight away. There is a beat of silence the world is filling in.\n\nThen something does answer, in its own slow way.",
-      ],
-      "forgotten-realms": [
-        "{echo}, says {name}, and the world hears them — because in the Realms the world does, more than people give it credit for. A stranger glances over. A coin clinks. A door, somewhere, opens.\n\nThe story turns a small page.",
-        "It is the kind of thing a hero would say — {echo}. {name} feels the small heat of the moment, the kind the bards will later claim was foreseen. Around them, Faerûn keeps doing what Faerûn does: deals being struck, songs being sung badly, blades being cleaned.\n\nThen a voice from the next table.",
-        "{echo}. The words land where they will. {name} moves on, and the city moves with them — a tide of small intentions, each going its own way, all somehow forming a current.",
-      ],
-      custom: [
-        "{echo}, says {name}. The world you described receives it the way you intended it to. Continue the scene; the dungeon master will weave around you.",
-      ],
-    },
+    openings: [
+      "The Sword Coast in late autumn — the road from Daggerford to Waterdeep is busy with merchant carts and tired pilgrims, and the sea wind carries the salt-and-tar smell of the harbour ahead. {name} rounds a bluff and sees the great city for the first time today: white walls catching the last light, ten thousand chimneys breathing thin smoke into the violet sky.\n\nA caravan master at the gate is shouting at someone. A child runs past with a hot pastry. A noble's carriage clatters by, late for somewhere.\n\nWhat do you do?",
+      "The Yawning Portal smells of hearth-smoke, old ale, and damp stone where the great well descends into the dungeon below. {name} pushes through the door and the room turns — only briefly, only the way taverns turn for new arrivals — and then turns back to its drinking. A halfling at the bar lifts a tankard. The bouncer, a half-orc with a kind face, nods once.\n\nWhat do you do?",
+      "Dawn over the Trade Way. {name} walks at the head of a small caravan that paid for protection: three wagons, two guards, one nervous merchant. The fields of Amn are still in their last sleep, the dew silver on every blade. A hawk's cry, far up. And then — far off, half-imagined — a horn answering it. Or a horn calling it.\n\nWhat do you do?",
+    ],
+    reflections: [
+      "{echo}, says {name}, and the world hears them — because in the Realms the world does, more than people give it credit for. A stranger glances over. A coin clinks. A door, somewhere, opens.\n\nThe story turns a small page.",
+      "It is the kind of thing a hero would say — {echo}. {name} feels the small heat of the moment, the kind the bards will later claim was foreseen. Around them, Faerûn keeps doing what Faerûn does: deals being struck, songs being sung badly, blades being cleaned.\n\nThen a voice from the next table.",
+      "{echo}. The words land where they will. {name} moves on, and the city moves with them — a tide of small intentions, each going its own way, all somehow forming a current.",
+    ],
   },
 } as const;
 
-export default en as any;
+export default en;

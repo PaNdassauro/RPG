@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
-import { getSetting, type SettingId } from "@/data/settings";
+import { getWorld } from "@/data/settings";
 import { useT } from "@/i18n";
 import { runDmTurn } from "@/dm/loop";
 import { CharacterCrest } from "@/components/play/CharacterCrest";
@@ -53,7 +53,6 @@ export function PlayScreen() {
     return () => reset();
   }, [campaignId, loadCampaign, reset]);
 
-  const setting = campaign ? getSetting(campaign.settingId as SettingId) ?? null : null;
   const [codexOpen, setCodexOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTab, setSheetTab] = useState<"summary" | "spells">("summary");
@@ -71,14 +70,14 @@ export function PlayScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const turn = useCallback(
     async (playerInput: string, isFirstTurn: boolean) => {
-      if (!campaign || !character || !setting) return;
+      if (!campaign || !character) return;
       // Abort any in-flight stream before starting another.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
       await runDmTurn({ playerInput, isFirstTurn, signal: controller.signal });
     },
-    [campaign, character, setting],
+    [campaign, character],
   );
 
   // Abort any in-flight DM stream when the play screen unmounts (navigation,
@@ -92,12 +91,12 @@ export function PlayScreen() {
   // Kick off the opening narration once — guarded against StrictMode double-mount.
   const openedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!campaign || !character || !setting) return;
+    if (!campaign || !character) return;
     if (messages.length > 0) return;
     if (openedForRef.current === campaign.id) return;
     openedForRef.current = campaign.id;
     turn("", true);
-  }, [campaign, character, setting, messages.length, turn]);
+  }, [campaign, character, messages.length, turn]);
 
   if (error) return <ErrorScreen error={error} />;
   if (!campaign || !character) return <LoadingScreen />;
@@ -107,7 +106,7 @@ export function PlayScreen() {
       <TopBar
         title={campaign.title}
         location={campaign.currentLocation.name}
-        worldName={setting?.name ?? null}
+        worldName={getWorld().name}
         activeProvider={activeProvider}
         onOpenCodex={() => setCodexOpen(true)}
         onOpenSheet={() => openSheetTab("summary")}

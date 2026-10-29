@@ -133,7 +133,7 @@ export const CampaignSchema = z.object({
   characterId: z.string(),
   worldSeed: z.string(),
   settingId: z.string(),
-  /** Optional player-supplied seed — only meaningful when settingId === "custom". */
+  /** Legacy: world text from the removed "custom" setting. Kept so old saves parse; unused. */
   customSettingDescription: z.string().optional(),
   currentLocation: z.object({
     name: z.string(),

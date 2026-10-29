@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const ptBR = {
   common: {
     back: "Voltar",
@@ -13,7 +12,7 @@ const ptBR = {
 
   title: {
     tagline: "Uma aventura guiada por IA",
-    name: "Ashfall",
+    name: "Forgotten Realms",
     intro:
       "Forje um herói da tradição 5e. Lance os dados. Deixe um narrador invisível tecer o mundo ao redor das suas escolhas.",
     continueLabel: "Continuar",
@@ -31,12 +30,12 @@ const ptBR = {
     eyebrow: "Pra entrar na cena agora",
     title: "Início rápido",
     intro:
-      "Escolha um nome e uma classe. O resto vira humano de antecedente acolyte com array padrão, no cenário Ashfall. Você pode reescrever a história com o Mestre depois.",
+      "Escolha um nome e uma classe. O resto vira humano de antecedente acolyte com array padrão, em algum ponto da Costa da Espada. Você pode reescrever a história com o Mestre depois.",
     nameLabel: "Nome do personagem",
     namePlaceholder: "Ex.: Kael, Vex, Mira…",
     classLabel: "Classe",
     defaultsHint:
-      "Raça: humano · Antecedente: acólito · Atributos: array padrão (15 no principal) · Cenário: Ashfall · 5 rações na mochila.",
+      "Raça: humano · Antecedente: acólito · Atributos: array padrão (15 no principal) · Mundo: Reinos Esquecidos · 5 rações na mochila.",
     startButton: "Começar aventura",
     creating: "Forjando…",
   },
@@ -132,7 +131,6 @@ const ptBR = {
     flavor: "Tradição 5e",
     forge: "Forja",
     stepNav: {
-      setting: "Mundo",
       identity: "Identidade",
       race: "Linhagem",
       class: "Vocação",
@@ -145,17 +143,6 @@ const ptBR = {
     nav: {
       back: "Voltar",
       continue: "Continuar",
-    },
-    settingStep: {
-      title: "Onde esta história se desenrola?",
-      description:
-        "O mundo colore tudo — o peso da magia, quais monstros são comuns, como estranhos cumprimentam um forasteiro. Escolha um cenário e o mestre conduzirá dentro dele.",
-      recommended: "Recomendado",
-      customLabel: "Descreva seu mundo",
-      customPlaceholder:
-        "Um império em decadência nas costas de um titã adormecido. Uma costa onde o mar começou a sonhar. O que parecer verdadeiro.",
-      customHint:
-        "Pelo menos 12 caracteres. O mestre usa isto literalmente como verdade do cenário.",
     },
     identityStep: {
       title: "Quem você se torna?",
@@ -662,19 +649,9 @@ const ptBR = {
   errors: {
     campaignNotFound: "Campanha não encontrada",
     characterNotFound: "Personagem não encontrado",
-    noSetting: "Esta campanha não tem cenário associado.",
   },
 
   settingsContent: {
-    ashfall: {
-      name: "Ashfall",
-      tagline: "Um mundo de fantasia sombria autoral.",
-      blurb:
-        "O sol não é visto há sete anos. Rosas de cinza brotam sobre os ossos de impérios mais antigos; suas pétalas mancham a neve. As Estradas Ocas correm entre vales que não pertencem a ninguém, e as coisas que caminham por elas são mais antigas que a linguagem. A magia ainda funciona — alguns dizem que melhor — mas cada feitiço cobra um pouco mais do que cobrava antes.",
-      themes: ["Sombrio", "Lento", "Horror silencioso", "Eras perdidas"],
-      dmSeed:
-        "A campanha se passa em **Ashfall**, um mundo de fantasia sombria autoral. Há sete anos, o sol se calou por trás de uma neblina permanente de cinzas; ninguém sabe por quê, e os poucos sábios que sabem se recusam a falar. O mundo vive seu longo crepúsculo: reinos encolheram a cidades muradas, o Império arruinado de Vaerell dorme sob lagos prateados, e as Estradas Ocas que conectam vales são inseguras a qualquer hora. A magia ainda funciona, mas parece mais antiga e relutante — cada conjuração vem com um pequeno eco indesejado. O tom é sombrio, mas não niilista. As apostas são íntimas. Há esperança, mas ela tem preço.",
-    },
     forgottenRealms: {
       name: "Reinos Esquecidos",
       tagline: "O cenário clássico de Dungeons & Dragons.",
@@ -684,49 +661,20 @@ const ptBR = {
       dmSeed:
         "A campanha se passa nos **Reinos Esquecidos** — Faerûn — o cenário canônico de Dungeons & Dragons. O mundo é de alta fantasia e alta magia: deuses são reais e ativos, dragões são reais, o Subterrâneo é um lugar literal abaixo da superfície, e aventureiro é uma profissão estabelecida. Pontos de partida comuns incluem a Costa da Espada (Águasfundas, Portão de Baldur, Neverwinter), as Terras dos Vales e o Mar da Lua. O tom é heroico — espera-se que os personagens se elevem. Use o sabor canônico de Faerûn: Mystra e a Trama, Selûne e Shar, os Harpistas, os Zhentarim. Evite copiar verbatim qualquer aventura publicada — improvise dentro do idioma do cenário.",
     },
-    custom: {
-      name: "Conte-me o seu",
-      tagline: "Descreva um mundo e o mestre o conduz.",
-      blurb:
-        "Se nenhum dos dois te chama, escreva um parágrafo. Uma única frase basta — 'um império em decadência nas costas de um titã adormecido', 'uma cidade que queima uma vez por ano e se reconstrói', 'uma costa onde o mar começou a sonhar' — e o mestre tece uma campanha em torno disso.",
-      themes: ["Seu"],
-      dmSeed:
-        "A campanha usa um cenário personalizado descrito pelo jogador na criação de personagem. Honre os detalhes de worldbuilding do jogador. Onde ele não tiver especificado, padrão para um tom de fantasia sombria com magia baixa-a-média, a menos que a descrição sugira o contrário. Trate a descrição do próprio jogador como a verdade canônica deste mundo.",
-    },
   },
 
   stubDm: {
-    openings: {
-      ashfall: [
-        "A estrada que entra em Greyhollow é uma fina fita cinza sob um céu mais cinza ainda. A cinza cai como a neve velha caía — devagar, paciente, com a intenção de sepultar tudo. {name} ajusta a capa e vê, na curva à frente, uma estalagem com uma janela quente e uma placa que há muito deixou de querer dizer alguma coisa. O vento cheira a ferro frio e cedro queimado.\n\nO que você faz?",
-        "Três dias depois da última aldeia, as rosas de cinza começaram. {name} vê-as forçando passagem pela terra prateada e queimada à beira da trilha: pequenas, teimosas, da cor de feridas antigas. Em algum lugar à frente um sino bate uma vez e silencia, como se tivesse se lembrado de si mesmo. O céu não muda. Não muda mesmo, há sete anos.\n\nO que você faz?",
-        "A capela no entroncamento está vazia há uma década, mas hoje à noite há uma vela acesa em sua única janela. {name} a vê do alto da crista — uma chama pequena e firme contra o longo crepúsculo azul. Não há cavalos amarrados do lado de fora. Não há pegadas na cinza levando até a porta.\n\nO que você faz?",
-      ],
-      "forgotten-realms": [
-        "Costa da Espada no fim do outono — a estrada de Daggerford até Águasfundas está cheia de carroças de mercadores e peregrinos cansados, e o vento do mar carrega o cheiro de sal e piche do porto à frente. {name} contorna um morro e vê a grande cidade pela primeira vez hoje: muralhas brancas captando a última luz, dez mil chaminés exalando fumaça fina contra o céu violeta.\n\nUm chefe de caravana grita com alguém no portão. Uma criança passa correndo com um pastel quente. A carruagem de um nobre passa atroando, atrasada para algum lugar.\n\nO que você faz?",
-        "O Portal Boquiaberto cheira a fumaça de lareira, cerveja velha e pedra úmida onde o grande poço desce até a masmorra abaixo. {name} empurra a porta e a sala se vira — só por um instante, só do jeito que tavernas se viram para recém-chegados — e depois volta a beber. Um halfling no balcão ergue uma caneca. O leão-de-chácara, um meio-orc de rosto bondoso, acena uma vez com a cabeça.\n\nO que você faz?",
-        "Amanhecer sobre a Estrada do Comércio. {name} caminha à frente de uma pequena caravana que pagou por proteção: três carroças, dois guardas, um mercador nervoso. Os campos de Amn ainda dormem seu último sono, o orvalho prateado em cada folha. O grito de um falcão, lá no alto. E então — distante, quase imaginado — uma trompa respondendo. Ou uma trompa chamando.\n\nO que você faz?",
-      ],
-      custom: [
-        "O mundo se firma em sua primeira forma verdadeira ao redor de {name}. Respire; descreva o que ele vê, quem encontra, o que faz.\n\n(O mestre seguirá seu rastro.)",
-      ],
-    },
-    reflections: {
-      ashfall: [
-        "{name} se move, e a cinza responde — um pequeno assentar cinza, um pequeno erguer cinza. {echo} paira no ar frio um instante a mais do que deveria. Em algum lugar não tão distante, algo escuta e não se mexe.\n\nO mundo o considera. O mundo, ainda, não decide.",
-        "A escolha está feita: {echo}. {name} sente isso como uma pedra sente o rio — não decidindo, apenas sendo decidido em torno. Um vento sopra. As rosas de cinza se inclinam.\n\nUma forma, à frente, que não estava ali antes.",
-        "Aconteça o que acontecer aqui, {name} vai se lembrar de ter dito {echo} — do jeito que o frio deixou as palavras quebradiças, do jeito que ninguém respondeu de imediato. Há um compasso de silêncio que o mundo está preenchendo.\n\nEntão algo responde, do seu jeito lento.",
-      ],
-      "forgotten-realms": [
-        "{echo}, diz {name}, e o mundo escuta — porque nos Reinos o mundo escuta, mais do que as pessoas dão crédito. Um estranho olha por cima do ombro. Uma moeda tine. Uma porta, em algum lugar, se abre.\n\nA história vira uma pequena página.",
-        "É o tipo de coisa que um herói diria — {echo}. {name} sente o pequeno calor do momento, o tipo que os bardos depois alegarão ter sido previsto. Ao redor, Faerûn segue fazendo o que Faerûn faz: acordos sendo fechados, canções sendo cantadas mal, lâminas sendo limpas.\n\nEntão uma voz da mesa ao lado.",
-        "{echo}. As palavras pousam onde quiserem. {name} segue em frente, e a cidade segue com ele — uma maré de pequenas intenções, cada uma indo para seu lado, todas de algum modo formando uma corrente.",
-      ],
-      custom: [
-        "{echo}, diz {name}. O mundo que você descreveu recebe isso do jeito que você pretendia. Continue a cena; o mestre vai tecer ao seu redor.",
-      ],
-    },
+    openings: [
+      "Costa da Espada no fim do outono — a estrada de Daggerford até Águasfundas está cheia de carroças de mercadores e peregrinos cansados, e o vento do mar carrega o cheiro de sal e piche do porto à frente. {name} contorna um morro e vê a grande cidade pela primeira vez hoje: muralhas brancas captando a última luz, dez mil chaminés exalando fumaça fina contra o céu violeta.\n\nUm chefe de caravana grita com alguém no portão. Uma criança passa correndo com um pastel quente. A carruagem de um nobre passa atroando, atrasada para algum lugar.\n\nO que você faz?",
+      "O Portal Boquiaberto cheira a fumaça de lareira, cerveja velha e pedra úmida onde o grande poço desce até a masmorra abaixo. {name} empurra a porta e a sala se vira — só por um instante, só do jeito que tavernas se viram para recém-chegados — e depois volta a beber. Um halfling no balcão ergue uma caneca. O leão-de-chácara, um meio-orc de rosto bondoso, acena uma vez com a cabeça.\n\nO que você faz?",
+      "Amanhecer sobre a Estrada do Comércio. {name} caminha à frente de uma pequena caravana que pagou por proteção: três carroças, dois guardas, um mercador nervoso. Os campos de Amn ainda dormem seu último sono, o orvalho prateado em cada folha. O grito de um falcão, lá no alto. E então — distante, quase imaginado — uma trompa respondendo. Ou uma trompa chamando.\n\nO que você faz?",
+    ],
+    reflections: [
+      "{echo}, diz {name}, e o mundo escuta — porque nos Reinos o mundo escuta, mais do que as pessoas dão crédito. Um estranho olha por cima do ombro. Uma moeda tine. Uma porta, em algum lugar, se abre.\n\nA história vira uma pequena página.",
+      "É o tipo de coisa que um herói diria — {echo}. {name} sente o pequeno calor do momento, o tipo que os bardos depois alegarão ter sido previsto. Ao redor, Faerûn segue fazendo o que Faerûn faz: acordos sendo fechados, canções sendo cantadas mal, lâminas sendo limpas.\n\nEntão uma voz da mesa ao lado.",
+      "{echo}. As palavras pousam onde quiserem. {name} segue em frente, e a cidade segue com ele — uma maré de pequenas intenções, cada uma indo para seu lado, todas de algum modo formando uma corrente.",
+    ],
   },
 } as const;
 
-export default ptBR as any;
+export default ptBR;

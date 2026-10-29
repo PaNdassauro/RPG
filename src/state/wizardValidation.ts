@@ -2,10 +2,8 @@ import { getRace, getClass } from "@/data/srd";
 import { ABILITIES, type Ability, type SkillName } from "@/schemas/character";
 import { pointBuyRemaining, STANDARD_ARRAY } from "./derivedCharacter";
 import type { WizardStep } from "./wizardStore";
-import type { SettingId } from "@/data/settings";
 
 interface WizardSnapshot {
-  setting: { settingId: SettingId; customDescription: string };
   identity: { name: string };
   race: {
     raceId: string | null;
@@ -26,8 +24,6 @@ interface WizardSnapshot {
 
 export function isStepComplete(step: WizardStep, w: WizardSnapshot): boolean {
   switch (step) {
-    case "setting":
-      return isSettingComplete(w);
     case "identity":
       return w.identity.name.trim().length > 0;
     case "race":
@@ -45,13 +41,6 @@ export function isStepComplete(step: WizardStep, w: WizardSnapshot): boolean {
     case "review":
       return true;
   }
-}
-
-function isSettingComplete(w: WizardSnapshot): boolean {
-  if (w.setting.settingId === "custom") {
-    return w.setting.customDescription.trim().length >= 12;
-  }
-  return !!w.setting.settingId;
 }
 
 function isRaceComplete(w: WizardSnapshot): boolean {

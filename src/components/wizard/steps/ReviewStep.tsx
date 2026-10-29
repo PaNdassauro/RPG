@@ -8,7 +8,7 @@ import { StepHeader } from "@/components/ui/StepHeader";
 import { deriveSheet } from "@/state/derivedCharacter";
 import { getRace, getSubrace, getClass, getBackground } from "@/data/srd";
 import { ABILITIES, type Ability } from "@/schemas/character";
-import { getSetting } from "@/data/settings";
+import { FORGOTTEN_REALMS_ID, getWorld } from "@/data/settings";
 import { useT } from "@/i18n";
 
 export function ReviewStep() {
@@ -33,7 +33,7 @@ export function ReviewStep() {
     ? getBackground(wizard.background.backgroundId)
     : null;
 
-  const setting = getSetting(wizard.setting.settingId);
+  const world = getWorld();
 
   const sheet = deriveSheet({
     race: wizard.race,
@@ -57,7 +57,6 @@ export function ReviewStep() {
       const campaignId = newId();
       const now = Date.now();
 
-      const customDesc = wizard.setting.customDescription.trim();
       await db.transaction("rw", db.characters, db.campaigns, async () => {
         await db.characters.put(character);
         await db.campaigns.put({
@@ -65,11 +64,7 @@ export function ReviewStep() {
           title: `${character.name}'s Tale`,
           characterId: character.id,
           worldSeed: newId(),
-          settingId: wizard.setting.settingId,
-          customSettingDescription:
-            wizard.setting.settingId === "custom" && customDesc.length > 0
-              ? customDesc
-              : undefined,
+          settingId: FORGOTTEN_REALMS_ID,
           currentLocation: { name: "An Unknown Threshold", description: "" },
           inWorldDay: 1,
           quests: [],
@@ -104,11 +99,9 @@ export function ReviewStep() {
 
       <div className="space-y-6 rounded-md border border-accent-muted/30 bg-surface/60 p-6">
         <header>
-          {setting && (
-            <p className="mb-3 font-display text-[10px] uppercase tracking-[0.3em] text-text-muted">
-              {t("wizard.reviewStep.worldLabel")} · <span className="text-accent">{setting.name}</span>
-            </p>
-          )}
+          <p className="mb-3 font-display text-[10px] uppercase tracking-[0.3em] text-text-muted">
+            {t("wizard.reviewStep.worldLabel")} · <span className="text-accent">{world.name}</span>
+          </p>
           <p className="font-display text-xs uppercase tracking-[0.3em] text-accent-muted">
             {[subrace?.name, race?.name].filter(Boolean).join(" · ")} · {klass?.name} · L
             {sheet.level}

@@ -5,7 +5,6 @@ import { isStepComplete } from "@/state/wizardValidation";
 import { useT } from "@/i18n";
 import { StepNav } from "@/components/wizard/StepNav";
 import { LiveSheet } from "@/components/wizard/LiveSheet";
-import { SettingStep } from "@/components/wizard/steps/SettingStep";
 import { IdentityStep } from "@/components/wizard/steps/IdentityStep";
 import { RaceStep } from "@/components/wizard/steps/RaceStep";
 import { ClassStep } from "@/components/wizard/steps/ClassStep";
@@ -22,7 +21,6 @@ export function CharacterWizard() {
   const prev = useWizardStore((s) => s.prev);
   const snapshot = useWizardStore(
     useShallow((s) => ({
-      setting: s.setting,
       identity: s.identity,
       race: s.race,
       classChoice: s.classChoice,
@@ -58,7 +56,6 @@ export function CharacterWizard() {
         </div>
 
         <main className="min-w-0">
-          {step === "setting" && <SettingStep />}
           {step === "identity" && <IdentityStep />}
           {step === "race" && <RaceStep />}
           {step === "class" && <ClassStep />}
@@ -73,7 +70,7 @@ export function CharacterWizard() {
               <button
                 type="button"
                 onClick={prev}
-                disabled={step === "setting"}
+                disabled={step === "identity"}
                 className="rounded-md border border-line bg-surface px-5 py-2.5 font-display text-xs uppercase tracking-widest text-text transition hover:bg-surface-elevated disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {t("wizard.nav.back")}

@@ -1,14 +1,7 @@
 import { create } from "zustand";
 import type { Ability, SkillName } from "@/schemas/character";
-import { DEFAULT_SETTING_ID, type SettingId } from "@/data/settings";
 
 export type AbilityInputMode = "point_buy" | "standard_array" | "manual";
-
-export interface WizardSetting {
-  settingId: SettingId;
-  /** Free-form world description — only used when settingId === "custom". */
-  customDescription: string;
-}
 
 export interface WizardIdentity {
   name: string;
@@ -51,7 +44,6 @@ export interface WizardEquipment {
 }
 
 export type WizardStep =
-  | "setting"
   | "identity"
   | "race"
   | "class"
@@ -62,7 +54,6 @@ export type WizardStep =
   | "review";
 
 export const WIZARD_STEPS: WizardStep[] = [
-  "setting",
   "identity",
   "race",
   "class",
@@ -72,18 +63,6 @@ export const WIZARD_STEPS: WizardStep[] = [
   "equipment",
   "review",
 ];
-
-export const STEP_TITLES: Record<WizardStep, string> = {
-  setting: "World",
-  identity: "Identity",
-  race: "Heritage",
-  class: "Calling",
-  background: "Background",
-  abilities: "Abilities",
-  skills: "Talents",
-  equipment: "Provisions",
-  review: "Review",
-};
 
 const DEFAULT_SCORES: Record<Ability, number> = {
   str: 8,
@@ -96,7 +75,6 @@ const DEFAULT_SCORES: Record<Ability, number> = {
 
 interface WizardState {
   step: WizardStep;
-  setting: WizardSetting;
   identity: WizardIdentity;
   race: WizardRace;
   classChoice: WizardClass;
@@ -110,7 +88,6 @@ interface WizardState {
   next: () => void;
   prev: () => void;
 
-  setSetting: (patch: Partial<WizardSetting>) => void;
   setIdentity: (patch: Partial<WizardIdentity>) => void;
   setRace: (raceId: string | null, subraceId?: string | null) => void;
   setRaceAbilityChoice: (ability: Ability, bonus: number) => void;
@@ -132,7 +109,6 @@ const initialState = (): Omit<
   | "setStep"
   | "next"
   | "prev"
-  | "setSetting"
   | "setIdentity"
   | "setRace"
   | "setRaceAbilityChoice"
@@ -147,8 +123,7 @@ const initialState = (): Omit<
   | "setEquipmentChoice"
   | "reset"
 > => ({
-  step: "setting",
-  setting: { settingId: DEFAULT_SETTING_ID, customDescription: "" },
+  step: "identity",
   identity: { name: "", bio: "", portraitId: "p-01" },
   race: { raceId: null, subraceId: null, abilityChoiceBonuses: {} },
   classChoice: { classId: null, level: 1 },
@@ -179,9 +154,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     const prevStep = WIZARD_STEPS[Math.max(idx - 1, 0)];
     if (prevStep) set({ step: prevStep });
   },
-
-  setSetting: (patch) =>
-    set((s) => ({ setting: { ...s.setting, ...patch } })),
 
   setIdentity: (patch) =>
     set((s) => ({ identity: { ...s.identity, ...patch } })),
