@@ -7,8 +7,7 @@ import { useSessionStore } from "@/state/sessionStore";
 import { useKeysStore } from "@/state/keysStore";
 import { getWorld, type CampaignSetting } from "@/data/settings";
 import { assemblePrompt } from "@/ai/promptAssembly";
-import { createAnthropicProvider } from "@/ai/providers/anthropic";
-import { createOpenAIProvider } from "@/ai/providers/openai";
+import { createProviderFromRecord } from "@/ai/providers";
 import type { LLMProvider, StreamEvent } from "@/ai/provider";
 import { resolveDamage, resolveHealing, type DamageResolution } from "@/engine/combat";
 import { armorClass, effectiveMaxHp } from "@/state/sheetDerived";
@@ -888,22 +887,7 @@ function pickProvider(): LLMProvider | null {
   if (!active) return null;
   const record = keys.records[active];
   if (!record) return null;
-
-  if (record.providerId === "claude") {
-    return createAnthropicProvider({
-      apiKey: record.key,
-      model: record.model,
-    });
-  }
-  if (record.providerId === "openai") {
-    return createOpenAIProvider({
-      apiKey: record.key,
-      model: record.model,
-      ...(record.baseUrl ? { baseUrl: record.baseUrl } : {}),
-    });
-  }
-  // Gemini / Ollama land in a follow-up slice.
-  return null;
+  return createProviderFromRecord(record);
 }
 
 async function* streamFromProvider(
