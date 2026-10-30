@@ -67,10 +67,13 @@ export function createSseParser(): SseParser {
 
 /**
  * Read a streaming fetch body as SSE events. Decodes UTF-8 incrementally,
- * flushes the parser at EOF, and always releases the reader.
+ * flushes the parser at EOF, and always releases the reader. `onChunk` fires on
+ * every network read (keep-alive pings included) so a caller can run an
+ * inactivity watchdog.
  */
 export async function* readSseEvents(
   body: ReadableStream<Uint8Array>,
+  onChunk?: () => void,
 ): AsyncGenerator<SseEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -79,6 +82,7 @@ export async function* readSseEvents(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      onChunk?.();
       yield* parser.push(decoder.decode(value, { stream: true }));
     }
     yield* parser.push(decoder.decode());

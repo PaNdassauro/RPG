@@ -444,11 +444,17 @@ describe("assemblePrompt system and state", () => {
     for (const tag of [
       "CHECK", "SAVE", "XP", "FACTION", "REP", "COMPANION", "SHOP", "TRAVEL", "ATTACK",
       "DAMAGE", "HEAL", "INITIATIVE", "REACTION", "ENDCOMBAT", "COND", "DISPOSITION",
-      "ROUND", "INSPIRE", "PLACE", "NPC", "QUEST",
+      "ROUND", "INSPIRE", "PLACE", "NPC", "QUEST", "LOCATION",
     ]) {
       expect(staticPart.text).toContain(`[${tag}`);
     }
     expect(staticPart.text).not.toContain("[LEVELUP");
+  });
+
+  it("tells the DM to emit [LOCATION] on arrival and in the opening response", () => {
+    expect(staticPart.text).toMatch(/\[LOCATION name=.*first response.*new place/s);
+    const { messages } = build([], "");
+    expect(messages[0]!.content).toContain("[LOCATION]");
   });
 
   it("names every canonical faction exactly", () => {

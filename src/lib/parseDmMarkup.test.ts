@@ -179,3 +179,40 @@ describe("unclosed / truncated blocks", () => {
     expect(stripUnclosedMarkup(t)).toBe(t);
   });
 });
+
+describe("[LOCATION] block", () => {
+  it("parses the name and a one-line description and strips the block", () => {
+    const p = parseDmMarkup(
+      'You step into town.\n[LOCATION name="Daggerford"]A river town\nof timber and stone.[/LOCATION]\nRain falls.',
+    );
+    expect(p.location).toEqual({ name: "Daggerford", description: "A river town of timber and stone." });
+    expect(p.cleaned).toBe("You step into town.\n\nRain falls.");
+  });
+
+  it("drops a block without a name but still strips it", () => {
+    const p = parseDmMarkup("Hello [LOCATION]nowhere in particular[/LOCATION] there");
+    expect(p.location).toBeNull();
+    expect(p.cleaned).not.toContain("LOCATION");
+  });
+
+  it("accepts an empty description and caps absurd lengths", () => {
+    expect(parseDmMarkup('[LOCATION name="The Yawning Portal"][/LOCATION]').location).toEqual({
+      name: "The Yawning Portal",
+      description: "",
+    });
+    const long = parseDmMarkup(`[LOCATION name="${"N".repeat(200)}"]${"d".repeat(900)}[/LOCATION]`).location!;
+    expect(long.name).toHaveLength(80);
+    expect(long.description).toHaveLength(300);
+  });
+
+  it("the last valid block wins", () => {
+    const p = parseDmMarkup('[LOCATION name="A"]a[/LOCATION] then [LOCATION name="B"]b[/LOCATION]');
+    expect(p.location?.name).toBe("B");
+  });
+
+  it("a truncated block is cut like any other unclosed block", () => {
+    const p = parseDmMarkup('The road ends. [LOCATION name="Neverwi');
+    expect(p.location).toBeNull();
+    expect(p.cleaned).toBe("The road ends.");
+  });
+});

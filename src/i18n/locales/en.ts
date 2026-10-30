@@ -334,6 +334,12 @@ const en = {
     actionPlaceholderBusy: "The dungeon master is responding…",
     actionPlaceholderCombat: "Your turn — describe what you do. Tap Action or Bonus to spend them, then Finish Turn when you're done.",
     sendTitle: "Send (Cmd/Ctrl+Enter)",
+    turn: {
+      connectionLost: "The connection to the dungeon master dropped. Try again.",
+      cancel: "Cancel",
+      cancelTitle: "Stop waiting for the dungeon master",
+      slowHint: "Still waiting for the dungeon master…",
+    },
     diceTray: {
       expressionLabel: "Dice expression",
       title: "Dice Tray",

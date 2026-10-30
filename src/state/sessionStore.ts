@@ -209,8 +209,12 @@ interface SessionState {
    * flips off earlier, so gate turn submission on this instead.
    */
   busy: boolean;
-  /** Surface for transient errors (e.g., provider failed). */
+  /** When the current turn began (ms epoch); null while idle. Drives the "Cancel" escape hatch. */
+  busySince: number | null;
+  /** Fatal load failure (campaign or character missing): replaces the play screen. */
   error: string | null;
+  /** The last turn's provider failure, shown inline so the player can retry. */
+  turnError: string | null;
   /** Outstanding skill check the player must roll before the DM continues. */
   pendingCheck: PendingCheck | null;
   /** Outstanding saving throw the player must roll before the DM continues. */
@@ -260,6 +264,7 @@ interface SessionState {
   discardDraft: () => void;
   finalizeDraft: (opts?: FinalizeDraftOptions) => Promise<ChatMessage | null>;
   setError: (error: string | null) => void;
+  setTurnError: (error: string | null) => void;
   setPendingCheck: (check: PendingCheck | null) => void;
   setPendingSave: (save: PendingSave | null) => void;
   setPendingReaction: (reaction: PendingReaction | null) => void;
@@ -354,6 +359,12 @@ interface SessionState {
   setCombatantRange: (id: string, range: "close" | "near" | "far" | "veryFar") => Promise<void>;
   /** Travel by N days: consumes 1 ration/day; missing rations trigger hunger. */
   travel: (input: { days: number; destination?: string }) => Promise<{ rationsConsumed: number; daysHungry: number }>;
+  /**
+   * Move the player to a new place (the DM's [LOCATION] markup, or the `to` of
+   * [TRAVEL]). An empty description falls back to the codex entry for that
+   * place, or keeps the current one when the name is unchanged.
+   */
+  setLocation: (input: { name: string; description?: string }) => Promise<void>;
   /** Set rations directly (used by shop purchases / quest rewards). */
   setRations: (next: number) => Promise<void>;
   /** Chronicle everything up to the end of the story now (manual recap). */
@@ -414,7 +425,9 @@ const initial = {
   thinking: false,
   streaming: false,
   busy: false,
+  busySince: null,
   error: null,
+  turnError: null,
   pendingCheck: null,
   pendingSave: null,
   pendingReaction: null,
@@ -593,7 +606,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const turn: LiveTurn = { id: ++turnSeq, campaignId, controller: new AbortController() };
     liveTurn = turn;
     // Whatever the superseded turn left on screen is abandoned with it.
-    set({ busy: true, draftDm: "", streaming: false });
+    set({ busy: true, busySince: Date.now(), draftDm: "", streaming: false });
     return { id: turn.id, campaignId, signal: turn.controller.signal };
   },
 
@@ -608,13 +621,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   endTurn(id) {
     if (liveTurn?.id !== id) return;
     liveTurn = null;
-    set({ busy: false, thinking: false, streaming: false });
+    set({ busy: false, busySince: null, thinking: false, streaming: false });
   },
 
   abortTurn() {
     liveTurn?.controller.abort();
     liveTurn = null;
-    set({ busy: false, thinking: false, streaming: false, draftDm: "" });
+    set({ busy: false, busySince: null, thinking: false, streaming: false, draftDm: "" });
   },
 
   discardDraft() {
@@ -654,6 +667,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setError(error) {
     set({ error });
+  },
+
+  setTurnError(turnError) {
+    set({ turnError });
   },
 
   setPendingCheck(pendingCheck) {
@@ -1495,7 +1512,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async travel({ days, destination }) {
-    void destination;
     const { character } = get();
     if (!character) return { rationsConsumed: 0, daysHungry: 0 };
     const hunger = resolveTravelHunger({
@@ -1523,7 +1539,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({ pendingDying: null, pendingDeath: { id: newPendingId("death") } });
     }
     await get().advanceDay(days);
+    if (destination) await get().setLocation({ name: destination });
     return { rationsConsumed: hunger.rationsConsumed, daysHungry: hunger.daysHungry };
+  },
+
+  async setLocation({ name, description }) {
+    const { campaign } = get();
+    const trimmed = name.trim();
+    if (!campaign || !trimmed) return;
+    const key = trimmed.toLowerCase();
+    const current = campaign.currentLocation;
+    const sameName = current.name.trim().toLowerCase() === key;
+    const known = (campaign.placesVisited ?? []).find((p) => p.key === key);
+    const nextDescription =
+      description?.trim() || (sameName ? current.description : (known?.description ?? ""));
+    if (sameName && current.name === trimmed && current.description === nextDescription) return;
+    const next: Campaign = {
+      ...campaign,
+      currentLocation: { name: trimmed, description: nextDescription },
+      updatedAt: Date.now(),
+    };
+    await db.campaigns.put(next);
+    // Merge into the live campaign: a write that raced this one (day advance,
+    // codex entry) must not be rolled back by our snapshot.
+    set((s) =>
+      s.campaign?.id === next.id
+        ? { campaign: { ...s.campaign, currentLocation: next.currentLocation, updatedAt: next.updatedAt } }
+        : {},
+    );
   },
 
   async setRations(nextValue) {

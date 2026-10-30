@@ -17,10 +17,13 @@ import type {
 } from "../provider";
 import { readSseEvents } from "../sse";
 import {
+  classifyStreamFailure,
   describeHttpError,
   describeNetworkError,
+  describeStall,
   fetchWithRetry,
-  isAbortError,
+  withIdleGuard,
+  type IdleGuard,
 } from "./http";
 
 export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5";
@@ -166,139 +169,157 @@ export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
   const model = config.model ?? DEFAULT_CLAUDE_MODEL;
   const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
 
+  async function* streamMessages(
+    args: CompletionArgs,
+    guard: IdleGuard,
+  ): AsyncIterable<StreamEvent> {
+    if (args.signal?.aborted) {
+      yield { kind: "done", reason: "aborted" };
+      return;
+    }
+
+    let response: Response;
+    try {
+      response = await fetchWithRetry(
+        "https://api.anthropic.com/v1/messages",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": config.apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify(buildAnthropicBody(args, args.model ?? model, maxTokens)),
+        },
+        guard.signal,
+        { onActivity: guard.touch },
+      );
+    } catch (err) {
+      const failure = classifyStreamFailure(err, args.signal, guard);
+      if (failure === "aborted") {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+      console.error("[ai/anthropic] network error", err);
+      yield {
+        kind: "error",
+        message: failure === "stalled" ? describeStall() : describeNetworkError(err, PROVIDER_NAME),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      const text = await response.text().catch(() => "");
+      console.error(`[ai/anthropic] HTTP ${response.status}`, text);
+      yield {
+        kind: "error",
+        message: describeHttpError(response.status, text, PROVIDER_NAME),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    let stopReason: string | null = null;
+    const usage = { read: 0, created: 0, input: 0 };
+    let usageSeen = false;
+    let usageLogged = false;
+    const noteUsage = (u: z.infer<typeof UsageSchema> | undefined) => {
+      if (!u) return;
+      // message_delta repeats totals, so later values replace earlier ones.
+      if (u.cache_read_input_tokens != null) usage.read = u.cache_read_input_tokens;
+      if (u.cache_creation_input_tokens != null) usage.created = u.cache_creation_input_tokens;
+      if (u.input_tokens != null) usage.input = u.input_tokens;
+      usageSeen = true;
+    };
+    const logUsage = () => {
+      if (usageLogged || !usageSeen) return;
+      usageLogged = true;
+      console.info("[anthropic] cache", { ...usage });
+    };
+    try {
+      for await (const sse of readSseEvents(response.body, guard.touch)) {
+        if (sse.data === "[DONE]") continue;
+        let json: unknown;
+        try {
+          json = JSON.parse(sse.data);
+        } catch {
+          continue;
+        }
+        const parsed = StreamEventSchema.safeParse(json);
+        if (!parsed.success) continue;
+        const event = parsed.data;
+
+        if (event.type === "message_start") {
+          noteUsage(event.message?.usage);
+        } else if (event.type === "content_block_delta") {
+          if (event.delta?.type === "text_delta" && typeof event.delta.text === "string") {
+            yield { kind: "text", delta: event.delta.text };
+          }
+        } else if (event.type === "message_delta") {
+          if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
+          noteUsage(event.usage);
+        } else if (event.type === "message_stop") {
+          logUsage();
+          yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
+          return;
+        } else if (event.type === "error") {
+          const overloaded = event.error?.type === "overloaded_error";
+          console.error("[ai/anthropic] stream error", event.error);
+          yield {
+            kind: "error",
+            message: overloaded
+              ? t("settings.errors.overloaded", { provider: PROVIDER_NAME })
+              : (event.error?.message ?? t("settings.errors.streamFailed", { provider: PROVIDER_NAME })),
+          };
+          yield { kind: "done", reason: "error" };
+          return;
+        }
+      }
+    } catch (err) {
+      const failure = classifyStreamFailure(err, args.signal, guard);
+      if (failure === "aborted") {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+      console.error("[ai/anthropic] stream read failed", err);
+      yield {
+        kind: "error",
+        message: failure === "stalled" ? describeStall() : describeNetworkError(err, PROVIDER_NAME),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    logUsage();
+    if (args.signal?.aborted) {
+      yield { kind: "done", reason: "aborted" };
+      return;
+    }
+    if (guard.timedOut) {
+      yield { kind: "error", message: describeStall() };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+    // The stream closed without message_stop: the reply may be cut short.
+    if (stopReason !== null) {
+      yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
+      return;
+    }
+    yield {
+      kind: "error",
+      message: t("settings.errors.streamEnded", { provider: PROVIDER_NAME }),
+    };
+    yield { kind: "done", reason: "error" };
+  }
+
   return {
     id: "claude",
     displayName: "Anthropic Claude",
     supportsTools: true,
     supportsPromptCaching: true,
-    streamCompletion: async function* (
-      args: CompletionArgs,
-    ): AsyncIterable<StreamEvent> {
-      if (args.signal?.aborted) {
-        yield { kind: "done", reason: "aborted" };
-        return;
-      }
-
-      let response: Response;
-      try {
-        response = await fetchWithRetry(
-          "https://api.anthropic.com/v1/messages",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": config.apiKey,
-              "anthropic-version": "2023-06-01",
-              "anthropic-dangerous-direct-browser-access": "true",
-            },
-            body: JSON.stringify(buildAnthropicBody(args, args.model ?? model, maxTokens)),
-          },
-          args.signal,
-        );
-      } catch (err) {
-        if (args.signal?.aborted || isAbortError(err)) {
-          yield { kind: "done", reason: "aborted" };
-          return;
-        }
-        console.error("[ai/anthropic] network error", err);
-        yield { kind: "error", message: describeNetworkError(err, PROVIDER_NAME) };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      if (!response.ok || !response.body) {
-        const text = await response.text().catch(() => "");
-        console.error(`[ai/anthropic] HTTP ${response.status}`, text);
-        yield {
-          kind: "error",
-          message: describeHttpError(response.status, text, PROVIDER_NAME),
-        };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      let stopReason: string | null = null;
-      const usage = { read: 0, created: 0, input: 0 };
-      let usageSeen = false;
-      let usageLogged = false;
-      const noteUsage = (u: z.infer<typeof UsageSchema> | undefined) => {
-        if (!u) return;
-        // message_delta repeats totals, so later values replace earlier ones.
-        if (u.cache_read_input_tokens != null) usage.read = u.cache_read_input_tokens;
-        if (u.cache_creation_input_tokens != null) usage.created = u.cache_creation_input_tokens;
-        if (u.input_tokens != null) usage.input = u.input_tokens;
-        usageSeen = true;
-      };
-      const logUsage = () => {
-        if (usageLogged || !usageSeen) return;
-        usageLogged = true;
-        console.info("[anthropic] cache", { ...usage });
-      };
-      try {
-        for await (const sse of readSseEvents(response.body)) {
-          if (sse.data === "[DONE]") continue;
-          let json: unknown;
-          try {
-            json = JSON.parse(sse.data);
-          } catch {
-            continue;
-          }
-          const parsed = StreamEventSchema.safeParse(json);
-          if (!parsed.success) continue;
-          const event = parsed.data;
-
-          if (event.type === "message_start") {
-            noteUsage(event.message?.usage);
-          } else if (event.type === "content_block_delta") {
-            if (event.delta?.type === "text_delta" && typeof event.delta.text === "string") {
-              yield { kind: "text", delta: event.delta.text };
-            }
-          } else if (event.type === "message_delta") {
-            if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
-            noteUsage(event.usage);
-          } else if (event.type === "message_stop") {
-            logUsage();
-            yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
-            return;
-          } else if (event.type === "error") {
-            const overloaded = event.error?.type === "overloaded_error";
-            console.error("[ai/anthropic] stream error", event.error);
-            yield {
-              kind: "error",
-              message: overloaded
-                ? t("settings.errors.overloaded", { provider: PROVIDER_NAME })
-                : (event.error?.message ?? t("settings.errors.streamFailed", { provider: PROVIDER_NAME })),
-            };
-            yield { kind: "done", reason: "error" };
-            return;
-          }
-        }
-      } catch (err) {
-        if (args.signal?.aborted || isAbortError(err)) {
-          yield { kind: "done", reason: "aborted" };
-          return;
-        }
-        console.error("[ai/anthropic] stream read failed", err);
-        yield { kind: "error", message: describeNetworkError(err, PROVIDER_NAME) };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      logUsage();
-      if (args.signal?.aborted) {
-        yield { kind: "done", reason: "aborted" };
-        return;
-      }
-      // The stream closed without message_stop: the reply may be cut short.
-      if (stopReason !== null) {
-        yield { kind: "done", reason: mapAnthropicStopReason(stopReason) };
-        return;
-      }
-      yield {
-        kind: "error",
-        message: t("settings.errors.streamEnded", { provider: PROVIDER_NAME }),
-      };
-      yield { kind: "done", reason: "error" };
-    },
+    streamCompletion: (args: CompletionArgs): AsyncIterable<StreamEvent> =>
+      withIdleGuard(args.signal, (guard) => streamMessages(args, guard)),
   };
 }

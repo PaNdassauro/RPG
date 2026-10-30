@@ -249,6 +249,7 @@ The Codex panel fills from [PLACE], [NPC] and [QUEST] blocks; the engine strips 
 [NPC name="Yagra Stonefist" kind="ally|foe|neutral"]Half-orc bouncer at the Yawning Portal; quietly kind, slow to anger, faster than she looks.[/NPC]
 - One or two sentences in a chronicler's voice (role, manner, what they want). \`kind\` is their current standing toward the player (default neutral).
 - Never re-emit [PLACE] or [NPC] for a name in the Index or in the detail lists. At most three [PLACE] and three [NPC] per response.
+- [LOCATION name="Daggerford"]A river town of timber and stone where the Delimbiyr meets the trade road.[/LOCATION] sets where the player is now (the Location line in <state> and the screen header). Emit it in your very first response, and again whenever the scene moves to a new place: arriving in a town, entering a building, a dungeon or a new wilderness spot. The name is short and proper ("The Yawning Portal", "Old Mill Road"); the body is one line. Never re-emit it for the place they are already in. It does not replace [PLACE] for a new place, and one per response at most.
 - Quests are upserted by a stable kebab-case id: [QUEST id="rescue-the-mason" title="Rescue the Mason" objective="Find the mason before nightfall."][/QUEST], and [QUEST id="rescue-the-mason" status="completed"][/QUEST] to close (active | completed | failed | abandoned). Reuse the id from the Active quests list. Open one when an NPC asks something of the player or a clear goal forms; at most one open or close per response.
 
 # Engine markup
@@ -297,7 +298,7 @@ You never roll dice or compute outcomes; the engine does. Request them with the 
 [INSPIRE]why[/INSPIRE] grants Inspiration for inspired roleplay or a heroic choice.
 [COMPANION name="<name>" kind="<familiar|summon|hireling|mount>" hp=<n> ac=<n> init=<bonus> attack="<name>" damage="<XdY+Z>" tohit=<n> type=<damageType>]one-line description[/COMPANION] adds or updates a roster entry; active companions join initiative automatically.
 [SHOP vendor="<name>" location="<optional>"]{"offers":[{"id":"id1","name":"Item","priceGp":15,"qty":1,"description":"..."}]}[/SHOP] opens a shop when the player is actually at a vendor.
-[TRAVEL days=<n> to="<destination>"]narration[/TRAVEL] consumes one ration per day (no rations means hunger, eventually exhaustion); pair it with a [PLACE] if the destination is new.
+[TRAVEL days=<n> to="<destination>"]narration[/TRAVEL] consumes one ration per day (no rations means hunger, eventually exhaustion) and moves the player's Location to the destination; pair it with a [PLACE] if the destination is new.
 
 # Combat turn order
 Once [INITIATIVE] is up, combat runs in rounds, in descending initiative. The player decides when their own turn ends (a Finish Turn button); they may send several messages within one turn.
@@ -489,7 +490,8 @@ function buildMessages(args: AssembleArgs): AssembledMessage[] {
 
   // First turn, before any input: seed one.
   if (flat.length === 0) {
-    const opening = "(Open the scene. Set the camera. Introduce my character to the world.)";
+    const opening =
+      "(Open the scene. Set the camera. Introduce my character to the world. Include a [LOCATION] block naming where I am.)";
     flat.push({ role: "user", content: memory ? `${memory}\n\n${opening}` : opening });
   }
 

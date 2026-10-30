@@ -1,16 +1,32 @@
-import { useId, useRef, useState } from "react";
-import { Dices, Send, Sword, Zap, Flag } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Dices, Send, Sword, Zap, Flag, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "@/state/sessionStore";
 import { runDmTurn } from "@/dm/loop";
 import { DiceTray } from "./DiceTray";
 import { newId } from "@/lib/id";
+import { isRetryOfLastPlayerMessage } from "@/lib/playerMessage";
+import { watchElapsed } from "@/lib/watchElapsed";
 import { useT } from "@/i18n";
 import type { ChatMessage } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
 
 const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas";
+
+/** A turn this slow gets a "Cancel" control; the provider watchdog gives up on its own after 45 s of silence. */
+const CANCEL_AFTER_MS = 20_000;
+
+/** True once the current turn has been running for `thresholdMs`; false while idle. */
+function useBusyPast(since: number | null, thresholdMs: number): boolean {
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    setPast(false);
+    if (since === null) return;
+    return watchElapsed(since, thresholdMs, () => setPast(true));
+  }, [since, thresholdMs]);
+  return since !== null && past;
+}
 
 interface ActionBarProps {
   onSubmit: (text: string) => Promise<void> | void;
@@ -24,6 +40,9 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
   const streaming = useSessionStore((s) => s.streaming);
   const thinking = useSessionStore((s) => s.thinking);
   const storeBusy = useSessionStore((s) => s.busy);
+  const busySince = useSessionStore((s) => s.busySince);
+  const turnError = useSessionStore((s) => s.turnError);
+  const abortTurn = useSessionStore((s) => s.abortTurn);
   const encounter = useSessionStore((s) => s.encounter);
   const { actionEconomy, consumeAction, resetActionEconomy } = useSessionStore(
     useShallow((s) => ({
@@ -49,6 +68,7 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
   // move); only submitting is gated on the DM turn being idle.
   const busy = !!disabled || storeBusy || streaming || thinking;
   const inCombat = !!encounter;
+  const slowTurn = useBusyPast(storeBusy ? busySince : null, CANCEL_AFTER_MS);
 
   function appendTagged(slot: "action" | "bonus", label: string) {
     if (busy) return;
@@ -89,7 +109,11 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
       ts,
     };
     try {
-      await appendMessage(playerMsg);
+      // A retry of an unanswered action re-runs the turn on the message that
+      // is already in the log instead of logging the same words twice.
+      if (!isRetryOfLastPlayerMessage(useSessionStore.getState().messages, text)) {
+        await appendMessage(playerMsg);
+      }
       await onSubmit(text);
     } finally {
       submittingRef.current = false;
@@ -117,7 +141,9 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
       ts,
     };
     try {
-      await appendMessage(playerMsg);
+      if (!isRetryOfLastPlayerMessage(useSessionStore.getState().messages, content)) {
+        await appendMessage(playerMsg);
+      }
       await runDmTurn({ playerInput: content, isFirstTurn: false });
     } finally {
       submittingRef.current = false;
@@ -195,6 +221,34 @@ export function ActionBar({ onSubmit, disabled }: ActionBarProps) {
             />
           </div>
         </div>
+
+        {slowTurn ? (
+          <div
+            role="status"
+            className="flex items-center justify-between gap-2 rounded-md border border-line bg-surface px-3 py-1.5 text-xs text-text-muted"
+          >
+            <span>{t("play.turn.slowHint")}</span>
+            <button
+              type="button"
+              onClick={() => abortTurn()}
+              title={t("play.turn.cancelTitle")}
+              className={cn(
+                "flex min-h-8 items-center gap-1.5 rounded-md border border-danger/60 bg-danger/10 px-2.5 font-display text-[10px] uppercase tracking-widest text-danger transition-colors duration-150 ease-out hover:bg-danger/20 active:scale-[0.97]",
+                FOCUS,
+              )}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("play.turn.cancel")}
+            </button>
+          </div>
+        ) : turnError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-danger/50 bg-danger/10 px-3 py-1.5 text-xs text-danger"
+          >
+            {turnError}
+          </p>
+        ) : null}
 
         <div className="flex items-end gap-2">
           <textarea

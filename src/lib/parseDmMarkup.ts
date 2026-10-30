@@ -24,6 +24,7 @@ const REP_RE = /\[REP([^\]]*)\]([\s\S]*?)\[\/REP\]/gi;
 const SHOP_RE = /\[SHOP([^\]]*)\]([\s\S]*?)\[\/SHOP\]/gi;
 const COMPANION_RE = /\[COMPANION([^\]]*)\]([\s\S]*?)\[\/COMPANION\]/gi;
 const TRAVEL_RE = /\[TRAVEL([^\]]*)\]([\s\S]*?)\[\/TRAVEL\]/gi;
+const LOCATION_RE = /\[LOCATION([^\]]*)\]([\s\S]*?)\[\/LOCATION\]/gi;
 const ATTACK_RE = /\[ATTACK([^\]]*)\]([\s\S]*?)\[\/ATTACK\]/gi;
 const DAMAGE_RE = /\[DAMAGE([^\]]*)\]([\s\S]*?)\[\/DAMAGE\]/gi;
 const HEAL_RE = /\[HEAL([^\]]*)\]([\s\S]*?)\[\/HEAL\]/gi;
@@ -39,6 +40,10 @@ const COND_RE = /\[COND([^\]]*)\]([\s\S]*?)\[\/COND\]/gi;
 const ROUND_RE = /\[ROUND\s*\/?\]/gi;
 const INSPIRE_RE = /\[INSPIRE([^\]]*)\]([\s\S]*?)\[\/INSPIRE\]/gi;
 
+/** Caps on a [LOCATION] block so a runaway reply can't bloat the saved campaign. */
+const MAX_LOCATION_NAME = 80;
+const MAX_LOCATION_DESCRIPTION = 300;
+
 const DICE_EXPR_RE = /^\d+d\d+([+-]\d+)?$/;
 
 /** Every block-style tag the DM may open; used to spot truncated blocks. */
@@ -51,6 +56,7 @@ const BLOCK_TAGS = [
   "SHOP",
   "COMPANION",
   "TRAVEL",
+  "LOCATION",
   "ATTACK",
   "DAMAGE",
   "HEAL",
@@ -196,6 +202,13 @@ export interface ParsedTravel {
   reason: string;
 }
 
+export interface ParsedLocation {
+  /** Where the player is now (the top-bar / <state> place name). */
+  name: string;
+  /** One-line description of the spot; may be empty. */
+  description: string;
+}
+
 export interface ParsedAttack {
   /** "player" or a combatant id from the active initiative. */
   target: CombatTarget;
@@ -334,6 +347,8 @@ export interface DmMarkupParseResult {
   shop: ParsedShop | null;
   companions: ParsedCompanion[];
   travels: ParsedTravel[];
+  /** The scene's current place; the last valid [LOCATION] block wins. */
+  location: ParsedLocation | null;
   dispositions: ParsedDisposition[];
   conditions: ParsedCondition[];
   /** True if the DM emitted [ROUND] / [ROUND/] — advances combat by one round. */
@@ -363,6 +378,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
   let initiative: ParsedInitiative | null = null;
   let endCombat: ParsedEndCombat | null = null;
   let shop: ParsedShop | null = null;
+  let location: ParsedLocation | null = null;
 
   CHECK_RE.lastIndex = 0;
   for (const match of text.matchAll(CHECK_RE)) {
@@ -510,6 +526,18 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     const days = intIn(attrs.days ?? 1, 1, 365) ?? 1;
     const destination = (attrs.to ?? attrs.destination ?? "").trim();
     travels.push({ days, destination, reason });
+  }
+
+  LOCATION_RE.lastIndex = 0;
+  for (const match of text.matchAll(LOCATION_RE)) {
+    const attrs = parseAttributes(match[1] ?? "");
+    const name = (attrs.name ?? "").trim().slice(0, MAX_LOCATION_NAME);
+    if (!name) continue;
+    const description = (match[2] ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, MAX_LOCATION_DESCRIPTION);
+    location = { name, description };
   }
 
   ATTACK_RE.lastIndex = 0;
@@ -691,6 +719,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
       .replace(SHOP_RE, "")
       .replace(COMPANION_RE, "")
       .replace(TRAVEL_RE, "$2")
+      .replace(LOCATION_RE, "")
       .replace(LEVELUP_RE, "$2")
       .replace(DISPOSITION_RE, "")
       .replace(COND_RE, "")
@@ -722,6 +751,7 @@ export function parseDmMarkup(text: string): DmMarkupParseResult {
     shop,
     companions,
     travels,
+    location,
     dispositions,
     conditions,
     roundAdvance,

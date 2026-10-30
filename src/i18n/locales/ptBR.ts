@@ -340,6 +340,12 @@ const ptBR = {
     actionPlaceholderBusy: "O mestre está respondendo…",
     actionPlaceholderCombat: "Seu turno — descreva o que faz. Toque em Ação ou Bônus para gastá-las, depois Encerrar turno quando terminar.",
     sendTitle: "Enviar (Cmd/Ctrl+Enter)",
+    turn: {
+      connectionLost: "A conexão com o mestre caiu — tente de novo.",
+      cancel: "Cancelar",
+      cancelTitle: "Parar de esperar pelo mestre",
+      slowHint: "Ainda aguardando o mestre…",
+    },
     diceTray: {
       expressionLabel: "Expressão de dados",
       title: "Bandeja de dados",

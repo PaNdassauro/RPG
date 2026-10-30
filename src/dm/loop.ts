@@ -81,7 +81,7 @@ export async function runDmTurn(args: RunDmTurnArgs): Promise<void> {
     // per-PC-turn vs per-initiative-cycle bug from the previous heuristic.
 
     session.setThinking(true);
-    session.setError(null);
+    session.setTurnError(null);
 
     const provider = pickProvider();
     let started = false;
@@ -102,7 +102,7 @@ export async function runDmTurn(args: RunDmTurnArgs): Promise<void> {
         }
         session.appendDraft(ev.delta);
       } else if (ev.kind === "error") {
-        session.setError(ev.message);
+        session.setTurnError(ev.message);
       } else if (ev.kind === "done") {
         reason = ev.reason;
         break;
@@ -297,6 +297,16 @@ async function applyMarkupSideEffects(text: string, campaignId: string): Promise
     await store().travel(args);
   }
   if (!alive()) return;
+
+  // LOCATION — where the scene is now. After TRAVEL so the DM's own one-line
+  // description wins over the bare destination name travel just set.
+  if (parsed.location) {
+    await store().setLocation({
+      name: parsed.location.name,
+      description: parsed.location.description,
+    });
+    if (!alive()) return;
+  }
 
   // REACTION — pause the loop until the player chooses use/pass.
   if (parsed.reactions.length > 0 && !down()) {

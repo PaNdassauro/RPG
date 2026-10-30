@@ -18,10 +18,13 @@ import {
 } from "../provider";
 import { readSseEvents } from "../sse";
 import {
+  classifyStreamFailure,
   describeHttpError,
   describeNetworkError,
+  describeStall,
   fetchWithRetry,
-  isAbortError,
+  withIdleGuard,
+  type IdleGuard,
 } from "./http";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-6.1-sol";
@@ -119,130 +122,148 @@ export function createOpenAIProvider(config: OpenAIConfig): LLMProvider {
   const displayName = config.displayName ?? "OpenAI GPT";
   const providerName = displayName;
 
+  async function* streamChat(
+    args: CompletionArgs,
+    guard: IdleGuard,
+  ): AsyncIterable<StreamEvent> {
+    if (args.signal?.aborted) {
+      yield { kind: "done", reason: "aborted" };
+      return;
+    }
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+
+    let response: Response;
+    try {
+      response = await fetchWithRetry(
+        `${baseUrl}/chat/completions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: args.model ?? model,
+            // The provider has no cache breakpoints; the system parts are
+            // simply concatenated.
+            messages: [
+              { role: "system", content: systemToText(args.system) },
+              ...args.messages.map((m) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.content,
+              })),
+            ],
+            [tokenParam]: maxTokens,
+            ...openAiRequestExtras(args.model ?? model),
+            stream: true,
+          }),
+        },
+        guard.signal,
+        { onActivity: guard.touch },
+      );
+    } catch (err) {
+      const failure = classifyStreamFailure(err, args.signal, guard);
+      if (failure === "aborted") {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+      console.error("[ai/openai] network error", err);
+      yield {
+        kind: "error",
+        message: failure === "stalled" ? describeStall() : describeNetworkError(err, providerName),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      const text = await response.text().catch(() => "");
+      console.error(`[ai/openai] HTTP ${response.status}`, text);
+      yield {
+        kind: "error",
+        message: describeHttpError(response.status, text, providerName),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    let finishReason: string | null = null;
+    try {
+      for await (const sse of readSseEvents(response.body, guard.touch)) {
+        if (sse.data === "[DONE]") {
+          yield { kind: "done", reason: mapOpenAiFinishReason(finishReason ?? "stop") };
+          return;
+        }
+        let json: unknown;
+        try {
+          json = JSON.parse(sse.data);
+        } catch {
+          continue;
+        }
+        const parsed = ChunkSchema.safeParse(json);
+        if (!parsed.success) continue;
+        if (parsed.data.error) {
+          console.error("[ai/openai] stream error", parsed.data.error);
+          yield {
+            kind: "error",
+            message:
+              parsed.data.error.message ??
+              t("settings.errors.streamFailed", { provider: providerName }),
+          };
+          yield { kind: "done", reason: "error" };
+          return;
+        }
+        const choice = parsed.data.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta?.content;
+        if (typeof delta === "string" && delta.length > 0) {
+          yield { kind: "text", delta };
+        }
+        // Keep reading after finish_reason: a usage chunk and [DONE] follow.
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+      }
+    } catch (err) {
+      const failure = classifyStreamFailure(err, args.signal, guard);
+      if (failure === "aborted") {
+        yield { kind: "done", reason: "aborted" };
+        return;
+      }
+      console.error("[ai/openai] stream read failed", err);
+      yield {
+        kind: "error",
+        message: failure === "stalled" ? describeStall() : describeNetworkError(err, providerName),
+      };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+
+    if (args.signal?.aborted) {
+      yield { kind: "done", reason: "aborted" };
+      return;
+    }
+    if (guard.timedOut) {
+      yield { kind: "error", message: describeStall() };
+      yield { kind: "done", reason: "error" };
+      return;
+    }
+    // Some compatible servers close the stream without [DONE]; a finish_reason
+    // is enough to call it complete. Without one the reply may be cut short.
+    if (finishReason !== null) {
+      yield { kind: "done", reason: mapOpenAiFinishReason(finishReason) };
+      return;
+    }
+    yield {
+      kind: "error",
+      message: t("settings.errors.streamEnded", { provider: providerName }),
+    };
+    yield { kind: "done", reason: "error" };
+  }
+
   return {
     id: config.id ?? "openai",
     displayName,
     supportsTools: true,
     supportsPromptCaching: false,
-    streamCompletion: async function* (
-      args: CompletionArgs,
-    ): AsyncIterable<StreamEvent> {
-      if (args.signal?.aborted) {
-        yield { kind: "done", reason: "aborted" };
-        return;
-      }
-
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-
-      let response: Response;
-      try {
-        response = await fetchWithRetry(
-          `${baseUrl}/chat/completions`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: args.model ?? model,
-              // The provider has no cache breakpoints; the system parts are
-              // simply concatenated.
-              messages: [
-                { role: "system", content: systemToText(args.system) },
-                ...args.messages.map((m) => ({
-                  role: m.role === "assistant" ? "assistant" : "user",
-                  content: m.content,
-                })),
-              ],
-              [tokenParam]: maxTokens,
-              ...openAiRequestExtras(args.model ?? model),
-              stream: true,
-            }),
-          },
-          args.signal,
-        );
-      } catch (err) {
-        if (args.signal?.aborted || isAbortError(err)) {
-          yield { kind: "done", reason: "aborted" };
-          return;
-        }
-        console.error("[ai/openai] network error", err);
-        yield { kind: "error", message: describeNetworkError(err, providerName) };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      if (!response.ok || !response.body) {
-        const text = await response.text().catch(() => "");
-        console.error(`[ai/openai] HTTP ${response.status}`, text);
-        yield {
-          kind: "error",
-          message: describeHttpError(response.status, text, providerName),
-        };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      let finishReason: string | null = null;
-      try {
-        for await (const sse of readSseEvents(response.body)) {
-          if (sse.data === "[DONE]") {
-            yield { kind: "done", reason: mapOpenAiFinishReason(finishReason ?? "stop") };
-            return;
-          }
-          let json: unknown;
-          try {
-            json = JSON.parse(sse.data);
-          } catch {
-            continue;
-          }
-          const parsed = ChunkSchema.safeParse(json);
-          if (!parsed.success) continue;
-          if (parsed.data.error) {
-            console.error("[ai/openai] stream error", parsed.data.error);
-            yield {
-              kind: "error",
-              message:
-                parsed.data.error.message ??
-                t("settings.errors.streamFailed", { provider: providerName }),
-            };
-            yield { kind: "done", reason: "error" };
-            return;
-          }
-          const choice = parsed.data.choices?.[0];
-          if (!choice) continue;
-          const delta = choice.delta?.content;
-          if (typeof delta === "string" && delta.length > 0) {
-            yield { kind: "text", delta };
-          }
-          // Keep reading after finish_reason: a usage chunk and [DONE] follow.
-          if (choice.finish_reason) finishReason = choice.finish_reason;
-        }
-      } catch (err) {
-        if (args.signal?.aborted || isAbortError(err)) {
-          yield { kind: "done", reason: "aborted" };
-          return;
-        }
-        console.error("[ai/openai] stream read failed", err);
-        yield { kind: "error", message: describeNetworkError(err, providerName) };
-        yield { kind: "done", reason: "error" };
-        return;
-      }
-
-      if (args.signal?.aborted) {
-        yield { kind: "done", reason: "aborted" };
-        return;
-      }
-      // Some compatible servers close the stream without [DONE]; a finish_reason
-      // is enough to call it complete. Without one the reply may be cut short.
-      if (finishReason !== null) {
-        yield { kind: "done", reason: mapOpenAiFinishReason(finishReason) };
-        return;
-      }
-      yield {
-        kind: "error",
-        message: t("settings.errors.streamEnded", { provider: providerName }),
-      };
-      yield { kind: "done", reason: "error" };
-    },
+    streamCompletion: (args: CompletionArgs): AsyncIterable<StreamEvent> =>
+      withIdleGuard(args.signal, (guard) => streamChat(args, guard)),
   };
 }

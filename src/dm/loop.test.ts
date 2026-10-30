@@ -139,7 +139,9 @@ describe("runDmTurn stream outcomes", () => {
     await turn();
     expect(dmMessages()).toHaveLength(0);
     expect(state().draftDm).toBe("");
-    expect(state().error).toBe("boom");
+    expect(state().turnError).toBe("boom");
+    // A provider failure is inline and retryable, never a dead-end screen.
+    expect(state().error).toBeNull();
   });
 
   it("refusal: a system notice instead of a DM message", async () => {
@@ -388,5 +390,50 @@ describe("[ROUND] and [COND] in one message", () => {
     await turn();
     expect(state().character!.conditionTimers).toEqual([{ index: "blinded", rounds: 2 }]);
     expect(state().encounter!.round).toBe(2);
+  });
+});
+
+describe("location markup", () => {
+  it("[LOCATION] updates the current place and persists it", async () => {
+    load(makeCharacter());
+    script.stream = () =>
+      emit(
+        text('You reach the gates. [LOCATION name="Daggerford"]A river town of timber and stone.[/LOCATION]'),
+        done("stop"),
+      );
+    await turn();
+    expect(state().campaign!.currentLocation).toEqual({
+      name: "Daggerford",
+      description: "A river town of timber and stone.",
+    });
+    expect(tables.campaigns[0]!.currentLocation).toMatchObject({ name: "Daggerford" });
+  });
+
+  it("[TRAVEL to=...] moves the player; a [LOCATION] in the same reply supplies the description", async () => {
+    load(makeCharacter({ rations: 5 }));
+    script.stream = () =>
+      emit(
+        text(
+          '[TRAVEL days=2 to="Neverwinter"]The road is long.[/TRAVEL] [LOCATION name="Neverwinter"]The Jewel of the North.[/LOCATION]',
+        ),
+        done("stop"),
+      );
+    await turn();
+    expect(state().campaign!.currentLocation).toEqual({ name: "Neverwinter", description: "The Jewel of the North." });
+    expect(state().campaign!.inWorldDay).toBe(3);
+  });
+
+  it("[TRAVEL to=...] alone sets the destination as the location", async () => {
+    load(makeCharacter({ rations: 5 }));
+    script.stream = () => emit(text('[TRAVEL days=1 to="Phandalin"]Dust.[/TRAVEL]'), done("stop"));
+    await turn();
+    expect(state().campaign!.currentLocation.name).toBe("Phandalin");
+  });
+
+  it("an aborted reply never moves the player", async () => {
+    load(makeCharacter());
+    script.stream = () => emit(text('[LOCATION name="Nowhere"]x[/LOCATION]'), done("aborted"));
+    await turn();
+    expect(state().campaign!.currentLocation.name).toBe("Here");
   });
 });

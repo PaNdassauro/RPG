@@ -396,3 +396,57 @@ describe("level-up hit points", () => {
     expect(state().character!.hp.max).toBe(20 + 6 + 2);
   });
 });
+
+describe("setLocation", () => {
+  const place = (name: string, description: string) => ({
+    id: `p_${name}`,
+    name,
+    description,
+    key: name.toLowerCase(),
+    addedAt: 0,
+  });
+
+  it("moves the player and persists it", async () => {
+    load(makeCharacter());
+    await state().setLocation({ name: " Daggerford ", description: "A river town." });
+    expect(state().campaign!.currentLocation).toEqual({ name: "Daggerford", description: "A river town." });
+    expect(tables.campaigns[0]!.currentLocation).toEqual({ name: "Daggerford", description: "A river town." });
+  });
+
+  it("ignores a blank name", async () => {
+    load(makeCharacter());
+    await state().setLocation({ name: "   " });
+    expect(state().campaign!.currentLocation.name).toBe("Here");
+  });
+
+  it("without a description, reuses the codex entry for that place", async () => {
+    load(makeCharacter(), campaign({ placesVisited: [place("Waterdeep", "The City of Splendors.")] }));
+    await state().setLocation({ name: "waterdeep" });
+    expect(state().campaign!.currentLocation).toEqual({ name: "waterdeep", description: "The City of Splendors." });
+  });
+
+  it("keeps the description when the same place is named again without one", async () => {
+    load(makeCharacter(), campaign({ currentLocation: { name: "Here", description: "A quiet hall." } }));
+    await state().setLocation({ name: "Here" });
+    expect(state().campaign!.currentLocation.description).toBe("A quiet hall.");
+  });
+
+  it("a new place with no description clears the old place's description", async () => {
+    load(makeCharacter(), campaign({ currentLocation: { name: "Here", description: "A quiet hall." } }));
+    await state().setLocation({ name: "Elsewhere" });
+    expect(state().campaign!.currentLocation).toEqual({ name: "Elsewhere", description: "" });
+  });
+
+  it("travel with a destination also moves the player there", async () => {
+    load(makeCharacter({ rations: 5 }));
+    await state().travel({ days: 2, destination: "Neverwinter" });
+    expect(state().campaign!.currentLocation.name).toBe("Neverwinter");
+    expect(state().campaign!.inWorldDay).toBe(3);
+  });
+
+  it("travel without a destination leaves the location alone", async () => {
+    load(makeCharacter({ rations: 5 }));
+    await state().travel({ days: 1 });
+    expect(state().campaign!.currentLocation.name).toBe("Here");
+  });
+});
