@@ -20,16 +20,15 @@ import { runDmTurn } from "@/dm/loop";
 import { CharacterCrest } from "@/components/play/CharacterCrest";
 import { NarrationLog } from "@/components/play/NarrationLog";
 import { ActionBar } from "@/components/play/ActionBar";
-import { RecentRollsRail } from "@/components/play/DiceTray";
 import { PendingCheckCard } from "@/components/play/PendingCheckCard";
 import { PendingSaveCard } from "@/components/play/PendingSaveCard";
 import { PendingReactionCard } from "@/components/play/PendingReactionCard";
 import { PendingConcentrationCard } from "@/components/play/PendingConcentrationCard";
 import { DyingCard } from "@/components/play/DyingCard";
 import { ActionPanel } from "@/components/play/ActionPanel";
-import { InitiativeTracker } from "@/components/play/InitiativeTracker";
+import { WorldRail } from "@/components/play/WorldRail";
 import { DeathScreen } from "@/components/play/DeathScreen";
-import { CodexSheet } from "@/components/play/CodexSheet";
+import { CodexSheet, type CodexTarget } from "@/components/play/CodexSheet";
 import { CharacterSheet } from "@/components/play/CharacterSheet";
 import { LevelUpModal } from "@/components/play/LevelUpModal";
 import { ShopModal } from "@/components/play/ShopModal";
@@ -57,6 +56,7 @@ export function PlayScreen() {
   }, [campaignId, loadCampaign, reset]);
 
   const [codexOpen, setCodexOpen] = useState(false);
+  const [codexTarget, setCodexTarget] = useState<CodexTarget | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTab, setSheetTab] = useState<"summary" | "spells">("summary");
   const [rollLogOpen, setRollLogOpen] = useState(false);
@@ -64,6 +64,11 @@ export function PlayScreen() {
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+
+  function openCodex(target?: CodexTarget) {
+    setCodexTarget(target ?? null);
+    setCodexOpen(true);
+  }
 
   function openSheetTab(tab: "summary" | "spells") {
     setSheetTab(tab);
@@ -100,7 +105,7 @@ export function PlayScreen() {
         location={campaign.currentLocation.name}
         worldName={getWorld().name}
         activeProvider={activeProvider}
-        onOpenCodex={() => setCodexOpen(true)}
+        onOpenCodex={() => openCodex()}
         onOpenSheet={() => openSheetTab("summary")}
         onOpenRollLog={() => setRollLogOpen(true)}
         onOpenRecap={() => setRecapOpen(true)}
@@ -108,7 +113,7 @@ export function PlayScreen() {
         onOpenMobileRight={() => setMobileRightOpen(true)}
         onOpenCheatsheet={() => setCheatsheetOpen(true)}
       />
-      <div className="grid flex-1 min-h-0 grid-cols-1 gap-0 lg:grid-cols-[340px_1fr_300px] xl:grid-cols-[380px_1fr_320px]">
+      <div className="grid flex-1 min-h-0 grid-cols-1 gap-0 lg:grid-cols-[340px_1fr_320px] xl:grid-cols-[380px_1fr_360px]">
         <div className="hidden flex-col gap-4 border-r border-line/60 px-5 py-6 lg:flex">
           <CharacterCrest />
           <ActionPanel onOpenSheet={openSheetTab} />
@@ -134,12 +139,12 @@ export function PlayScreen() {
           )}
         </div>
 
-        <div className="hidden border-l border-line/60 px-5 py-6 lg:block">
-          <RightRail />
+        <div className="hidden min-h-0 overflow-y-auto border-l border-line/60 px-5 py-6 lg:block">
+          <WorldRail onOpenCodex={openCodex} />
         </div>
       </div>
       <DeathScreen />
-      <CodexSheet open={codexOpen} onClose={() => setCodexOpen(false)} />
+      <CodexSheet open={codexOpen} onClose={() => setCodexOpen(false)} target={codexTarget} />
       <CharacterSheet open={sheetOpen} onClose={() => setSheetOpen(false)} defaultTab={sheetTab} />
       <RollLogSheet open={rollLogOpen} onClose={() => setRollLogOpen(false)} />
       <RecapModal open={recapOpen} onClose={() => setRecapOpen(false)} />
@@ -163,7 +168,12 @@ export function PlayScreen() {
         side="right"
         title={t("play.worldTitle")}
       >
-        <RightRail />
+        <WorldRail
+          onOpenCodex={(target) => {
+            setMobileRightOpen(false);
+            openCodex(target);
+          }}
+        />
       </MobileSheet>
     </div>
   );
@@ -319,72 +329,6 @@ function TopBar({
         </div>
       </div>
     </header>
-  );
-}
-
-function RightRail() {
-  const t = useT();
-  const campaign = useSessionStore((s) => s.campaign);
-  const encounter = useSessionStore((s) => s.encounter);
-  const activeQuests =
-    (campaign?.quests ?? []).filter((q) => q.status === "active");
-  return (
-    <aside className="sticky top-6 flex flex-col gap-5">
-      <section>
-        <p className="font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
-          {t("play.rightRail.whereYouAre")}
-        </p>
-        <p className="mt-1.5 font-display text-base text-text">
-          {campaign?.currentLocation.name ?? "—"}
-        </p>
-        <p className="mt-0.5 font-mono text-xs uppercase tracking-widest text-text-muted/80">
-          {t("play.rightRail.day", { n: campaign?.inWorldDay ?? 1 })}
-        </p>
-        {campaign?.currentLocation.description && (
-          <p className="mt-2 text-xs leading-relaxed text-text-muted/80">
-            {campaign.currentLocation.description}
-          </p>
-        )}
-      </section>
-
-      {encounter ? (
-        <InitiativeTracker />
-      ) : (
-        <section>
-          <p className="mb-2 font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
-            {t("play.recentRolls.heading")}
-          </p>
-          <RecentRollsRail />
-        </section>
-      )}
-
-      <section>
-        <p className="mb-2 font-display text-[10px] uppercase tracking-[0.3em] text-accent-muted">
-          {t("play.rightRail.quests")}
-        </p>
-        {activeQuests.length === 0 ? (
-          <p className="mt-1 text-xs italic text-text-muted/80">
-            {t("play.rightRail.noQuests")}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {activeQuests.map((q) => (
-              <li
-                key={q.id}
-                className="rounded-md border border-line/60 bg-surface/40 px-3 py-2"
-              >
-                <p className="font-display text-sm text-text">{q.title}</p>
-                {q.objective && (
-                  <p className="mt-0.5 text-xs leading-relaxed text-text-muted/80">
-                    {q.objective}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </aside>
   );
 }
 
