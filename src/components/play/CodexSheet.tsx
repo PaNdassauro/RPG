@@ -27,14 +27,23 @@ import type {
 } from "@/schemas/campaign";
 import { cn } from "@/lib/cn";
 
-type Tab = "places" | "npcs" | "quests" | "factions" | "companions" | "journal";
+export type CodexTab = "places" | "npcs" | "quests" | "factions" | "companions" | "journal";
+type Tab = CodexTab;
+
+/** Where the codex opens: a tab, and optionally the entry to scroll to and highlight. */
+export interface CodexTarget {
+  tab: CodexTab;
+  focusId?: string;
+}
 
 interface CodexSheetProps {
   open: boolean;
   onClose: () => void;
+  /** Applied each time the sheet opens; null opens on the last-used tab. */
+  target?: CodexTarget | null;
 }
 
-export function CodexSheet({ open, onClose }: CodexSheetProps) {
+export function CodexSheet({ open, onClose, target = null }: CodexSheetProps) {
   const t = useT();
   const campaign = useSessionStore((s) => s.campaign);
   const places = campaign?.placesVisited ?? [];
@@ -44,6 +53,9 @@ export function CodexSheet({ open, onClose }: CodexSheetProps) {
   const companions = campaign?.companions ?? [];
   const activeQuestCount = quests.filter((q) => q.status === "active").length;
   const [tab, setTab] = useState<Tab>("places");
+  useEffect(() => {
+    if (open && target) setTab(target.tab);
+  }, [open, target]);
 
   return (
     <Sheet open={open} onClose={onClose} side="right" className="w-full max-w-3xl">
@@ -106,7 +118,7 @@ export function CodexSheet({ open, onClose }: CodexSheetProps) {
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {tab === "places" && <PlacesList places={places} />}
-        {tab === "npcs" && <NpcsList npcs={npcs} />}
+        {tab === "npcs" && <NpcsList npcs={npcs} focusId={target?.tab === "npcs" ? target.focusId : undefined} />}
         {tab === "quests" && <QuestsList quests={quests} />}
         {tab === "factions" && <FactionsList factions={factions} />}
         {tab === "companions" && <CompanionsList companions={companions} />}
@@ -306,8 +318,12 @@ function PlacesList({ places }: { places: PlaceEntry[] }) {
   );
 }
 
-function NpcsList({ npcs }: { npcs: NpcEntry[] }) {
+function NpcsList({ npcs, focusId }: { npcs: NpcEntry[]; focusId?: string }) {
   const t = useT();
+  const focusRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    focusRef.current?.scrollIntoView({ block: "center" });
+  }, [focusId]);
   if (npcs.length === 0) {
     return <Empty text={t("play.codex.noNpcs")} />;
   }
@@ -317,7 +333,11 @@ function NpcsList({ npcs }: { npcs: NpcEntry[] }) {
       {sorted.map((n) => (
         <li
           key={n.id}
-          className="rounded-md border border-line/70 bg-surface/40 px-4 py-3 transition hover:border-accent-muted/60"
+          ref={n.id === focusId ? focusRef : undefined}
+          className={cn(
+            "rounded-md border bg-surface/40 px-4 py-3 transition hover:border-accent-muted/60",
+            n.id === focusId ? "border-accent/70 ring-accent" : "border-line/70",
+          )}
         >
           <div className="flex items-center gap-2">
             <KindIcon kind={n.kind} />

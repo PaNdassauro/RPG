@@ -26,11 +26,12 @@ export function InitiativeTracker() {
 
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between">
-        <p className="font-display text-[10px] uppercase tracking-[0.3em] text-danger">
+      <div className="mb-2 flex min-h-10 items-center justify-between">
+        <p className="flex items-center gap-2 font-display text-[13px] uppercase leading-none tracking-[0.15em] text-danger">
+          <Sword aria-hidden="true" className="h-4 w-4" />
           {t("play.combat.initiativeHeading")}
         </p>
-        <p className="font-mono text-xs uppercase tracking-widest text-text-muted">
+        <p className="text-[13px] tabular-nums text-text-muted">
           {t("play.combat.round", { n: encounter.round })}
         </p>
       </div>
@@ -91,7 +92,7 @@ export function InitiativeTracker() {
                       {entry.name}
                     </p>
                   </div>
-                  <p className="shrink-0 font-mono text-xs uppercase tracking-widest text-text-muted">
+                  <p className="shrink-0 font-mono text-xs tabular-nums text-text-muted">
                     {t("play.combat.initShort", { n: entry.initiative })}
                   </p>
                 </div>
